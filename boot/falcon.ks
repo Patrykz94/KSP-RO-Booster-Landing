@@ -142,7 +142,8 @@ libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions
 	local sT is 0. // start of program
 	local pT is 0. // previous tick
 	local impT is 0.
-	local landBurnT is 0. // Landing burn time
+	local landBurnT is 1. // Landing burn time
+	local landBurnD is 0. // Landing burn distance
 	local eventTime is 0.
 	
 	// MISSION PARAMETERS
@@ -214,7 +215,6 @@ until runmode = 0 {
 		set velLngCur to (mod(180 + posPrev:lng - posCur:lng, 360) - 180)/dT.
 		
 		set impT to timeToAltitude(lzAlt, altCur).
-		set landBurnT to mnv_time(ship:velocity:surface:mag).
 		set lzPosFut to latlng(lzPos:lat, mod(lzPos:lng + 180 + (impT * bodyRotation), 360) - 180).
 		set impPosCur to body:geopositionof(positionat(ship, time:seconds + impT)).
 		
@@ -248,6 +248,11 @@ until runmode = 0 {
 				set dirVecOffset to dirRet - velDirFlat.
 				set desiredDir to (-dirVecOffset - velDir):normalized * 25.
 			}
+		}
+		
+		if runmode = 9 {
+			set landBurnT to max(0.1,mnv_time(ship:velocity:surface:mag, list(Merlin1D_0))).
+			set landBurnD to altCur - lzAlt - verticalspeed * landBurnT + 0.5 * (ship:velocity:surface:mag/landBurnT) * landBurnT^2.
 		}
 	}
 	
@@ -487,7 +492,6 @@ until runmode = 0 {
 			
 			if (lzDistImp:mag <= posOffset) {
 				Engine["Stop"](list(
-					Merlin1D_0,
 					Merlin1D_1,
 					Merlin1D_2
 				)).
@@ -526,13 +530,13 @@ until runmode = 0 {
 	}
 	else if runmode = 9
 	{
-		set AltVel_PID:maxoutput to pidLimit.
-		set AltVel_PID:minoutput to -pidLimit.
-		set AltVel_PID:setpoint to lzAlt.
-		set VelThr_PID:setpoint to AltVel_PID:update(mT, altCur).
-		set tval to VelThr_PID:update(mT, verticalspeed).
-		set DescLatitudeChange_PID:kp to min(25, max(5, 25 - altCur/1000)).
-		set DescLongitudeChange_PID:kp to min(25, max(5, 25 - altCur/1000)).
+		//set AltVel_PID:maxoutput to pidLimit.
+		//set AltVel_PID:minoutput to -pidLimit.
+		//set AltVel_PID:setpoint to lzAlt.
+		//set VelThr_PID:setpoint to AltVel_PID:update(mT, altCur).
+		//set tval to VelThr_PID:update(mT, verticalspeed).
+		//set DescLatitudeChange_PID:kp to min(25, max(5, 25 - altCur/1000)).
+		//set DescLongitudeChange_PID:kp to min(25, max(5, 25 - altCur/1000)).
 		
 		if altCur - lzAlt > 2000 {
 			
@@ -608,7 +612,7 @@ until runmode = 0 {
 		print "Impact Position:           " + round(impPosCur:lng, 3) + ", " + round(impPosCur:lat, 3) + "             " at (3,21).
 		
 		print "Impact Time:               " + round(impT, 2) + "     " at (3, 23).
-		print "Suicide Burn Time:         " + round(landBurnT, 2) + "     " at (3, 24).
+		//print "Suicide Burn Time:         " + round(landBurnT, 2) + "     " at (3, 24).
 		print "Impact Distance:           " + round(lzDistImp:mag, 2) + "          " at (3, 25).
 		
 		print "Position offset:           " + round(posOffset, 2) + "           " at (3, 27).
@@ -626,51 +630,57 @@ until runmode = 0 {
 	print "DeltaV remaining:          " + round(sepDeltaV) + "     " at (3, 37).
 	print "PID loop KP:               " + round(DescLatitudeChange_PID:kp, 2) + "     " at (3, 38).
 	
-	print "Setpoint  " at(1,40).
-	print round(DescLatitudeChange_PID:setpoint,4) + "  " at(1,41).
-	print "Input     " at(11,40).
-	print round(DescLatitudeChange_PID:input,4) + "  " at(11,41).
-	print "Error     " at(21,40).
-	print round(DescLatitudeChange_PID:error,4) + "  " at(21,41).
-	print "Error Sum " at(31,40).
-	print round(DescLatitudeChange_PID:errorsum,4) + "  " at(31,41).
-	print "Output    " at(41,40).
-	print round(DescLatitudeChange_PID:output,4) + "  " at(41,41).
-	print "P Term    " at(1,42).
-	print round(DescLatitudeChange_PID:pterm,4) + "  " at(1,43).
-	print "I Term    " at(11,42).
-	print round(DescLatitudeChange_PID:iterm,4) + "  " at(11,43).
-	print "D Term    " at(21,42).
-	print round(DescLatitudeChange_PID:dterm,4) + "  " at(21,43).
-	print "Change    " at(31,42).
-	print round(DescLatitudeChange_PID:changerate,4) + "  " at(31,43).
-	print "Time      " at(41,42).
 	if runmode = 9 {
-		print round(DescLatitudeChange_PID:LASTSAMPLETIME,4) + "  " at(41,43).
+	print "Landing Burn Time:         " + round(landBurnT,1) + "     " at (3, 40).
+	print "Landing Burn Distance:     " + round(landBurnD) + "     " at (3, 41).
+	print "Dist until Landing Burn:   " + round(altCur - lzAlt - landBurnD) + "     " at (3, 42).
 	}
 	
-	print "Setpoint  " at(1,45).
-	print round(DescLatitude_PID:setpoint,4) + "  " at(1,46).
-	print "Input     " at(11,45).
-	print round(DescLatitude_PID:input,4) + "  " at(11,46).
-	print "Error     " at(21,45).
-	print round(DescLatitude_PID:error,4) + "  " at(21,46).
-	print "Error Sum " at(31,45).
-	print round(DescLatitude_PID:errorsum,4) + "  " at(31,46).
-	print "Output    " at(41,45).
-	print round(DescLatitude_PID:output,4) + "  " at(41,46).
-	print "P Term    " at(1,47).
-	print round(DescLatitude_PID:pterm,4) + "  " at(1,48).
-	print "I Term    " at(11,47).
-	print round(DescLatitude_PID:iterm,4) + "  " at(11,48).
-	print "D Term    " at(21,47).
-	print round(DescLatitude_PID:dterm,4) + "  " at(21,48).
-	print "Change    " at(31,47).
-	print round(DescLatitude_PID:changerate,4) + "  " at(31,48).
-	print "Time      " at(41,47).
-	if runmode = 9 {
-		print round(DescLatitude_PID:LASTSAMPLETIME,4) + "  " at(41,48).
-	}
+	//print "Setpoint  " at(1,40).
+	//print round(DescLatitudeChange_PID:setpoint,4) + "  " at(1,41).
+	//print "Input     " at(11,40).
+	//print round(DescLatitudeChange_PID:input,4) + "  " at(11,41).
+	//print "Error     " at(21,40).
+	//print round(DescLatitudeChange_PID:error,4) + "  " at(21,41).
+	//print "Error Sum " at(31,40).
+	//print round(DescLatitudeChange_PID:errorsum,4) + "  " at(31,41).
+	//print "Output    " at(41,40).
+	// print round(DescLatitudeChange_PID:output,4) + "  " at(41,41).
+	// print "P Term    " at(1,42).
+	// print round(DescLatitudeChange_PID:pterm,4) + "  " at(1,43).
+	// print "I Term    " at(11,42).
+	// print round(DescLatitudeChange_PID:iterm,4) + "  " at(11,43).
+	// print "D Term    " at(21,42).
+	// print round(DescLatitudeChange_PID:dterm,4) + "  " at(21,43).
+	// print "Change    " at(31,42).
+	// print round(DescLatitudeChange_PID:changerate,4) + "  " at(31,43).
+	// print "Time      " at(41,42).
+	// if runmode = 9 {
+		// print round(DescLatitudeChange_PID:LASTSAMPLETIME,4) + "  " at(41,43).
+	// }
+	
+	// print "Setpoint  " at(1,45).
+	// print round(DescLatitude_PID:setpoint,4) + "  " at(1,46).
+	// print "Input     " at(11,45).
+	// print round(DescLatitude_PID:input,4) + "  " at(11,46).
+	// print "Error     " at(21,45).
+	// print round(DescLatitude_PID:error,4) + "  " at(21,46).
+	// print "Error Sum " at(31,45).
+	// print round(DescLatitude_PID:errorsum,4) + "  " at(31,46).
+	// print "Output    " at(41,45).
+	// print round(DescLatitude_PID:output,4) + "  " at(41,46).
+	// print "P Term    " at(1,47).
+	// print round(DescLatitude_PID:pterm,4) + "  " at(1,48).
+	// print "I Term    " at(11,47).
+	// print round(DescLatitude_PID:iterm,4) + "  " at(11,48).
+	// print "D Term    " at(21,47).
+	// print round(DescLatitude_PID:dterm,4) + "  " at(21,48).
+	// print "Change    " at(31,47).
+	// print round(DescLatitude_PID:changerate,4) + "  " at(31,48).
+	// print "Time      " at(41,47).
+	// if runmode = 9 {
+		// print round(DescLatitude_PID:LASTSAMPLETIME,4) + "  " at(41,48).
+	// }
 	//print "Estimated Drag Force:          " + round((1.9 * (ship:sensors:pres * constant:kpatoatm) * (airspeed^2/2) * (7.28))*0.00144,3) + "     " at (3, 36).
 	
 	// ---=== [**START**] [ UPDATING VARIABLES AFTER EVERY ITERATION ] [**START**] ===--- //
