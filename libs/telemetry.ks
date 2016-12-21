@@ -9,7 +9,7 @@ FUNCTION staticGravity {
 }
 
 function gravity {
-	parameter alti.
+	parameter alti is ship:altitude.
 	return body:mu / (body:radius + alti)^2.
 }
 
