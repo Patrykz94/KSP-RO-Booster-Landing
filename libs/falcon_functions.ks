@@ -1,24 +1,24 @@
 @lazyglobal off.
 
-parameter stages is 2.//
-
 // ---=== [**START**] [ DECLARING VARIABLES ] [**START**] ===--- //
 
 	local KSCLaunchPad is latlng(28.6083859739973, -80.5997467227517).
+	local Waypoint is latlng(28.6183859739973, -80.5997467227517).
 	
-	local Merlin1D_0 is ship:partstagged("Merlin1D-0")[0].
-	local Merlin1D_1 is ship:partstagged("Merlin1D-1")[0].
-	local Merlin1D_2 is ship:partstagged("Merlin1D-2")[0].
-	local Merlin1D_3 is ship:partstagged("Merlin1D-3")[0].
-	local Merlin1D_4 is ship:partstagged("Merlin1D-4")[0].
-	local Merlin1D_5 is ship:partstagged("Merlin1D-5")[0].
-	local Merlin1D_6 is ship:partstagged("Merlin1D-6")[0].
-	local Merlin1D_7 is ship:partstagged("Merlin1D-7")[0].
-	local Merlin1D_8 is ship:partstagged("Merlin1D-8")[0].
-	if stages = 2 {
+	
+	if volume(1):name = "Falcon9-S2" {
 		local Merlin1D_Vac is ship:partstagged("Merlin1D-Vac")[0].
 	}
-	
+		local Merlin1D_0 is ship:partstagged("Merlin1D-0")[0].
+		local Merlin1D_1 is ship:partstagged("Merlin1D-1")[0].
+		local Merlin1D_2 is ship:partstagged("Merlin1D-2")[0].
+		local Merlin1D_3 is ship:partstagged("Merlin1D-3")[0].
+		local Merlin1D_4 is ship:partstagged("Merlin1D-4")[0].
+		local Merlin1D_5 is ship:partstagged("Merlin1D-5")[0].
+		local Merlin1D_6 is ship:partstagged("Merlin1D-6")[0].
+		local Merlin1D_7 is ship:partstagged("Merlin1D-7")[0].
+		local Merlin1D_8 is ship:partstagged("Merlin1D-8")[0].
+		
 	local ullageReq is false.
 	
 // ---=== [**START**] [ DECLARING VARIABLES ] [**START**] ===--- //
