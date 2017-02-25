@@ -115,11 +115,11 @@ libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions
 
 		// ----- Final touch-down loops ----- //
 		// Latitude control
-		local LandLatitudeChange_PID is pidloop(20, 0, 40, -0.015, 0.015).
-		local LandLatitude_PID is pidloop(1000, 0, 0, -15, 15).
+		local LandLatitudeChange_PID is pidloop(7.5, 0, 12, -0.01, 0.01).
+		local LandLatitude_PID is pidloop(500, 0, 0, -5, 5).
 		// Longditude control
-		local LandLongitudeChange_PID is pidloop(20, 0, 40, -0.015, 0.015).
-		local LandLongitude_PID is pidloop(1000, 0, 0, -15, 15).
+		local LandLongitudeChange_PID is pidloop(7.5, 0, 12, -0.01, 0.01).
+		local LandLongitude_PID is pidloop(500, 0, 0, -5, 5).
 		
 		// ----- Attitude control loops ----- //
 		// Pitch control
@@ -218,9 +218,9 @@ until runmode = 0 {
 		
 		set impT to timeToAltitude(lzAlt, altCur).
 		set lzPosFut to latlng(lzPos:lat, mod(lzPos:lng + 180 + (impT * bodyRotation), 360) - 180).
-		set impPosCur to body:geopositionof(positionat(ship, time:seconds + impT)).
 		
-		set impPosFut to latlng(body:geopositionof(positionat(ship, time:seconds + impT)):lat, body:geopositionof(positionat(ship, time:seconds + impT)):lng - (impT * bodyRotation)).
+		set impPosCur to latlng(body:geopositionof(positionat(ship, mT + impT)):lat, body:geopositionof(positionat(ship, mT + impT)):lng - 0.0000801).
+		set impPosFut to latlng(body:geopositionof(positionat(ship, mT + impT)):lat, body:geopositionof(positionat(ship, mT + impT)):lng - (impT * bodyRotation) - 0.0000801).
 		
 		set velLatImp to (mod(180 + impPosPrev:lat - impPosCur:lat, 360) - 180)/dT.
 		set velLngImp to (mod(180 + impPosPrev:lng - impPosCur:lng, 360) - 180)/dT.
@@ -281,20 +281,20 @@ until runmode = 0 {
 		wait 3.
 		stage.
 		set AltVel_PID:setpoint to 2000.
-		set VelThr_PID:setpoint to 20.
-		set steerPitch to 2.
+		set VelThr_PID:setpoint to 50.
+		set steerPitch to 0.
 		set steerYaw to 0.
 		set eventTime to mT.
 		set runmode to 2.
 	} else if runmode = 2 {
-		if mT > eventTime + 10 { set VelThr_PID:setpoint to 0. }
-		if mT > eventTime + 20 {
-			set LandLatitudeChange_PID:setpoint to lzPos:lat.
-			set LandLatitude_PID:setpoint to LandLatitudeChange_PID:update(mT, latitude).
+		if mT > eventTime + 20 { set VelThr_PID:setpoint to 0. }
+		if mT > eventTime + 5 {
+			set LandLatitudeChange_PID:setpoint to lzPosFut:lat.
+			set LandLatitude_PID:setpoint to LandLatitudeChange_PID:update(mT, impPosCur:lat).
 			set steerPitch to -LandLatitude_PID:update(mT, velLatCur).
 			
-			set LandLongitudeChange_PID:setpoint to lzPos:lng.
-			set LandLongitude_PID:setpoint to LandLongitudeChange_PID:update(mT, longitude).
+			set LandLongitudeChange_PID:setpoint to lzPosFut:lng.
+			set LandLongitude_PID:setpoint to LandLongitudeChange_PID:update(mT, impPosCur:lng).
 			set steerYaw to -LandLongitude_PID:update(mT, velLngCur).
 		}
 		
@@ -324,13 +324,13 @@ until runmode = 0 {
 		set vec2 to vecdraw(ship:position, posCur:position, rgb(0,1,0), "Pos", 1, true).
 		//set vec3 to vecdraw(ship:position, lzPos:position + landingOffset, rgb(0,0,1), "LO", 1, true).
 		//set vec4 to vecdraw(ship:position, lzPos:position + landingOffset3, rgb(1,0.3,0), "LO3", 1, true).
-		set vec5 to vecdraw(ship:position, lzPos:position + landingOffset4, rgb(1,1,1), "LO4", 1, true).
+		set vec5 to vecdraw(ship:position, lzPos:position, rgb(1,1,1), "LO4", 1, true).
 		
 	}
 	
 	if runmode >= 1 {
-		print "Current Position:          " + round(longitude, 3) + ", " + round(latitude, 3) + "             " at (3,20).
-		print "Impact Position:           " + round(impPosCur:lng, 3) + ", " + round(impPosCur:lat, 3) + "             " at (3,21).
+		print "Current Position:          " + round(longitude, 7) + ", " + round(latitude, 7) + "             " at (3,20).
+		print "Impact Position:           " + round(impPosFut:lng, 7) + ", " + round(impPosFut:lat, 7) + "             " at (3,21).
 		
 		print "Impact Time:               " + round(impT, 2) + "     " at (3, 23).
 		print "Current Angle:             " + round(vang(up:vector, ship:facing:forevector), 3) + "     " at (3, 29).
@@ -342,8 +342,8 @@ until runmode = 0 {
 		print "Steer Latitude:            " + round(steerPitch, 2) + "     " at (3, 30).
 		print "Steer Longitude:           " + round(steerYaw, 2) + "     " at (3, 31).
 		
-		print "Latitude Velocity          " + round(velLatImp, 4) + "         " at (3, 33).
-		print "Longitude Velocity         " + round(velLngImp, 4) + "         " at (3, 34).
+		print "Latitude Velocity          " + round(velLatImp, 8) + "             " at (3, 33).
+		print "Longitude Velocity         " + round(velLngImp, 8) + "             " at (3, 34).
 		
 	}
 	print "Latitude PID:              " + round(LandLatitudeChange_PID:output, 4) + "        " at (3, 36).

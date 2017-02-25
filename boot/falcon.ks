@@ -103,7 +103,7 @@ libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions
 		// ----- Landing loops ----- //		
 		// Landing velocity control
 		local AltVel_PID is pidloop(0.45, 0, 0.3, -600, 0.1).
-		local VelThr_PID is pidloop(0.05, 0.01, 0.005, 0.36, 1).
+		local VelThr_PID is pidloop(2.1, 9, 0.15, 0.36, 1).
 		
 		// ----- Controlled descent loops ----- //
 		// Latitude control
@@ -115,11 +115,11 @@ libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions
 
 		// ----- Final touch-down loops ----- //
 		// Latitude control
-		local LandLatitudeChange_PID is pidloop(1, 0.001, 0.2, -0.01, 0.01).
-		local LandLatitude_PID is pidloop(200, 0, 40, -15, 15).
+		local LandLatitudeChange_PID is pidloop(7.5, 0, 12, -0.01, 0.01).
+		local LandLatitude_PID is pidloop(500, 0, 0, -5, 5).
 		// Longditude control
-		local LandLongitudeChange_PID is pidloop(1, 0.001, 0.2, -0.01, 0.01).
-		local LandLongitude_PID is pidloop(200, 0, 40, -15, 15).
+		local LandLongitudeChange_PID is pidloop(7.5, 0, 12, -0.01, 0.01).
+		local LandLongitude_PID is pidloop(500, 0, 0, -5, 5).
 		
 		// ----- Attitude control loops ----- //
 		// Pitch control
@@ -218,9 +218,9 @@ until runmode = 0 {
 		
 		set impT to timeToAltitude(lzAlt, altCur).
 		set lzPosFut to latlng(lzPos:lat, mod(lzPos:lng + 180 + (impT * bodyRotation), 360) - 180).
-		set impPosCur to body:geopositionof(positionat(ship, time:seconds + impT)).
 		
-		set impPosFut to latlng(body:geopositionof(positionat(ship, time:seconds + impT)):lat, body:geopositionof(positionat(ship, time:seconds + impT)):lng - (impT * bodyRotation)).
+		set impPosCur to latlng(body:geopositionof(positionat(ship, mT + impT)):lat, body:geopositionof(positionat(ship, mT + impT)):lng - 0.0000801).
+		set impPosFut to latlng(body:geopositionof(positionat(ship, mT + impT)):lat, body:geopositionof(positionat(ship, mT + impT)):lng - (impT * bodyRotation) - 0.0000801).
 		
 		set velLatImp to (mod(180 + impPosPrev:lat - impPosCur:lat, 360) - 180)/dT.
 		set velLngImp to (mod(180 + impPosPrev:lng - impPosCur:lng, 360) - 180)/dT.
@@ -253,7 +253,7 @@ until runmode = 0 {
 		}
 		
 		if runmode = 9 {
-			set landBurnT to max(0.1,mnv_time(ship:velocity:surface:mag, list(Merlin1D_0))).
+			set landBurnT to max(0.1,mnv_time(ship:velocity:surface:mag, list(Merlin1D_0))) * 1.2.
 			//set landBurnD to altCur - lzAlt - verticalspeed * landBurnT + 0.5 * (ship:velocity:surface:mag/landBurnT) * landBurnT^2.
 			set landBurnH to verticalspeed^2 / (2*(ship:velocity:surface:mag/landBurnT - gravity())).
 			set landBurnD to altCur - lzAlt - landBurnH.
@@ -577,7 +577,7 @@ until runmode = 0 {
 			
 		}
 		
-		if tval < 1 {
+		if VelThr_PID:output < 0.37 {
 			set steerPitch to -steerPitch.
 			set steerYaw to -steerYaw.
 		}
@@ -622,7 +622,7 @@ until runmode = 0 {
 	
 	if runmode >= 4 {
 		print "Current Position:          " + round(longitude, 3) + ", " + round(latitude, 3) + "             " at (3,20).
-		print "Impact Position:           " + round(impPosCur:lng, 3) + ", " + round(impPosCur:lat, 3) + "             " at (3,21).
+		print "Impact Position:           " + round(impPosFut:lng, 3) + ", " + round(impPosFut:lat, 3) + "             " at (3,21).
 		
 		print "Impact Time:               " + round(impT, 2) + "     " at (3, 23).
 		//print "Suicide Burn Time:         " + round(landBurnT, 2) + "     " at (3, 24).
