@@ -3,7 +3,7 @@ clearscreen.
 set ship:control:pilotmainthrottle to 0.
 wait 0.
 
-local storagePath is "Falcon9S1Storage:".
+local storagePath is "1:".
 if not exists(storagePath + "/libs") {
 	createdir(storagePath + "/libs").
 }
@@ -323,22 +323,29 @@ until runmode = 0 {
 				)).
 				set tval to 0.
 				rcs on.
-				log " " to "Falcon9S2Storage:/separated.ks".
-				stage.
-				set eventTime to mT + 4.
-				set clearRequired to true.
-				set runmode to 4.
+				set eventTime to mT + 2.
+				set runmode to 3.1.
 			}
 		} else {
 			if Merlin1D_0:ignition and Merlin1D_0:flameout {
 				set tval to 0.
 				rcs on.
 				wait 1.
-				log " " to "Falcon9S2Storage:/separated.ks".
+				log " " to "Falcon9S2:/separated.ks".
 				stage.
 				set clearRequired to true.
 				set runmode to 0.
 			}
+		}
+	}
+	else if runmode = 3.1 // Booster reorienting.
+	{
+		if mT > eventTime {
+			log " " to "Falcon9S2:/separated.ks".
+			stage.
+			set eventTime to mT + 2.
+			set clearRequired to true.
+			set runmode to 4.
 		}
 	}
 	else if runmode = 4 // Booster reorienting.

@@ -6,7 +6,7 @@ wait 0.
 
 // requiring libraries
 
-local storagePath is "Falcon9S2Storage:".
+local storagePath is "1:".
 if not exists(storagePath + "/libs") {
 	createdir(storagePath + "/libs").
 }
@@ -87,7 +87,6 @@ until runmode = 0 {
 	else if runmode = 2
 	{
 		if mT > eventTime {
-			stage.
 			set eventTime to mT + 10.
 			set runmode to 3.
 		}

@@ -60,7 +60,7 @@
 		parameter engineList.
 		for engine in engineList {
 			local minThrottle is 0.
-			if engine[0]:name = "merlin1D" { set minThrottle to 36. } else { set minThrottle to 39. }
+			if engine[0]:name = "KK.SPX.Merlin1D+" { set minThrottle to 36. } else { set minThrottle to 39. }
 			set engine[1] to min(100, max(minThrottle, engine[1])).
 			local multiplier is 1 / (1 - (minThrottle * 0.01)).
 			
@@ -101,17 +101,22 @@
 // Falcon Fuel Control Functions (FFCF..)
 
 {
-	local f9DryMass is 23.504.
+	local f9DryMass is 23.0084756622314.
 	local f9tank is ship:partstagged("Falcon9-S1-Tank")[0].
 	
 	function getF9DeltaV {
 		parameter press is ship:sensors:pres * constant:kpatoatm.
 		local totalFuelMass is 0.
+		local f9Dry is f9DryMass.
 		local resources is f9tank:resources.
 		for resource in resources {
-			set totalFuelMass to totalFuelMass + (resource:density * resource:amount).
+			if resource:name = "Kerosene" or resource:name = "LqdOxygen" {
+				set totalFuelMass to totalFuelMass + (resource:density * resource:amount).
+			} else if resource:name = "Nitrogen" {
+				set f9Dry to f9Dry + (resource:density * resource:amount).
+			}
 		}
-		return Merlin1D_0:ispat(press) * 9.80665 * ln((f9DryMass + totalFuelMass) / f9DryMass).
+		return Merlin1D_0:ispat(press) * 9.80665 * ln((f9Dry + totalFuelMass) / f9Dry).
 	}
 	
 	global Fuel is lexicon(
@@ -125,7 +130,7 @@ function landingDeltaV { // Calculating the deltaV required at separation
 	
 	if landing <> 0 {
 		if landing <= 10 {
-			set delv to (groundspeed * 1.5) + 700 + 400.
+			set delv to (groundspeed * 1.5) + 700 + 500.
 		} else if landing <= 20 {
 			set delv to (groundspeed * 0.75) + 700 + 400.
 		} else {
@@ -167,20 +172,20 @@ function steeringConfig {
 	parameter conf.
 	
 	if conf = "reorientingFast" {
-		set steeringmanager:maxstoppingtime to 2.
-		set steeringmanager:rollts to 7.
-		set steeringmanager:pitchts to 5.
-		set steeringmanager:yawts to 5.
+		set steeringmanager:maxstoppingtime to 5.
+		set steeringmanager:rollts to 20.
+		set steeringmanager:pitchts to 10.
+		set steeringmanager:yawts to 10.
 		set steeringmanager:rolltorquefactor to 15.
 		set steeringmanager:pitchpid:ki to 0.
 		set steeringmanager:pitchpid:kd to 1.5.
 		set steeringmanager:yawpid:ki to 0.
 		set steeringmanager:yawpid:kd to 1.5.
 	} else if conf = "reorientingSlow" {
-		set steeringmanager:maxstoppingtime to 0.2.
-		set steeringmanager:rollts to 7.
-		set steeringmanager:pitchts to 5.
-		set steeringmanager:yawts to 5.
+		set steeringmanager:maxstoppingtime to 0.5.
+		set steeringmanager:rollts to 20.
+		set steeringmanager:pitchts to 10.
+		set steeringmanager:yawts to 10.
 		set steeringmanager:rolltorquefactor to 15.
 		set steeringmanager:pitchpid:ki to 0.
 		set steeringmanager:pitchpid:kd to 1.5.
