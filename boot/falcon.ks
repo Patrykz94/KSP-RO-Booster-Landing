@@ -167,6 +167,7 @@ libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions
 	local vec5 is 0.
 	
 	local bodyRotation is 360 / body:rotationperiod.
+	local tr is addons:tr.
 	
 // ---=== [**END**] [ DECLARING ALL NECESSARY VARIABLES ] [**END**] ===---
 
@@ -185,6 +186,7 @@ libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions
 	if landing <> 0 {
 		if landing = 1 {
 			set lzPos to KSCLaunchPad.
+			tr:settarget(KSCLaunchPad).
 		}
 		
 		set lzAlt to lzPos:terrainheight.
@@ -221,8 +223,11 @@ until runmode = 0 {
 		set lzPosFut to latlng(lzPos:lat, mod(lzPos:lng + 180 + (impT * bodyRotation), 360) - 180).
 		
 		set impPosCur to latlng(body:geopositionof(positionat(ship, mT + impT)):lat, body:geopositionof(positionat(ship, mT + impT)):lng - 0.0000801).
-		set impPosFut to latlng(body:geopositionof(positionat(ship, mT + impT)):lat, body:geopositionof(positionat(ship, mT + impT)):lng - (impT * bodyRotation) - 0.0000801).
-		
+		if tr:hasimpact {
+			set impPosFut to tr:impactpos.
+		} else {
+			set impPosFut to latlng(body:geopositionof(positionat(ship, mT + impT)):lat, body:geopositionof(positionat(ship, mT + impT)):lng - (impT * bodyRotation) - 0.0000801).
+		}
 		set velLatImp to (mod(180 + impPosPrev:lat - impPosCur:lat, 360) - 180)/dT.
 		set velLngImp to (mod(180 + impPosPrev:lng - impPosCur:lng, 360) - 180)/dT.
 		
@@ -232,7 +237,6 @@ until runmode = 0 {
 		
 		set landingOffset to vxcl(lzPos:position - impPosFut:position - body:position, lzPos:position - impPosFut:position):normalized * posOffset.
 		set landingOffset2 to vxcl(lzPosFut:position - impPosCur:position - body:position, lzPosFut:position - impPosCur:position):normalized.
-		//set landingOffset3 to vxcl(lzPos:position -posCur:position - impPosFut:position - body:position, lzPos:position -posCur:position - impPosFut:position):normalized * posOffset.
 		set landingOffset4 to (vxcl(lzPos:position - body:position, lzPos:position):normalized * (lzDistCur:mag/10)) + landingOffset.
 		
 		if runmode >= 4 {
