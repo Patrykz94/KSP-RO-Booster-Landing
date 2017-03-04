@@ -19,7 +19,7 @@ function libDl {
 	}
 }
 
-libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions", "falcon_functions")).
+libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions", "falcon_functions", "falcon_rcs")).
 
 // ---=== [**START**] [ DECLARING ALL NECESSARY VARIABLES ] [**START**] ===---
 
@@ -80,6 +80,7 @@ libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions
 	// STEERING VARIABLES
 
 	local tval is 0.
+	local stable is false.
 	
 	local steer is up.
 	local steerPitch is 0.
@@ -123,14 +124,14 @@ libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions
 		
 		// ----- Attitude control loops ----- //
 		// Pitch control
-		local PitchSpd_PID is pidloop(0.2, 0, 0.5, -5, 5).
-		local Pitch_PID is pidloop(0.8, 0, 0.3, -1, 1).
+		//local PitchSpd_PID is pidloop(0.2, 0, 0.5, -5, 5).
+		//local Pitch_PID is pidloop(0.8, 0, 0.3, -1, 1).
 		// Yaw control
-		local YawSpd_PID is pidloop(0.2, 0, 0.5, -5, 5).
-		local Yaw_PID is pidloop(0.8, 0, 0.3, -1, 1).
+		//local YawSpd_PID is pidloop(0.2, 0, 0.5, -5, 5).
+		//local Yaw_PID is pidloop(0.8, 0, 0.3, -1, 1).
 		// Roll control
-		local RollSpd_PID is pidloop(0.4, 0, 0.3, -20, 20).
-		local Roll_PID is pidloop(0.2, 0, 0.1, -1, 1).
+		//local RollSpd_PID is pidloop(0.4, 0, 0.3, -20, 20).
+		//local Roll_PID is pidloop(0.2, 0, 0.1, -1, 1).
 
 	// ---== END PID LOOPS ==--- //
 	
@@ -322,6 +323,7 @@ until runmode = 0 {
 					Merlin1D_8
 				)).
 				set tval to 0.
+				unlock steering.
 				rcs on.
 				set eventTime to mT + 2.
 				set runmode to 3.1.
@@ -329,6 +331,7 @@ until runmode = 0 {
 		} else {
 			if Merlin1D_0:ignition and Merlin1D_0:flameout {
 				set tval to 0.
+				unlock steering.
 				rcs on.
 				wait 1.
 				log " " to "Falcon9S2:/separated.ks".
@@ -346,41 +349,55 @@ until runmode = 0 {
 			set eventTime to mT + 2.
 			set clearRequired to true.
 			set runmode to 4.
+		} else {
+			stabilize().
 		}
 	}
 	else if runmode = 4 // Booster reorienting.
 	{
 		if mT > eventTime {
-			steeringConfig("reorientingFast").
-			set steer to -body:position.
-			set runmode to 4.1.
+			if stable = false {
+				if stabilize() = true {
+					set stable to true.
+				}
+			} else {
+				startFlip(12).
+			}
+			if rotCur[0] > 75 {
+				set runmode to 4.1.
+			}
+		} else {
+			stabilize().
 		}
 	}
 	else if runmode = 4.1
 	{
-		if rotCur[0] > 75 {
-			rcs off.
-			set runmode to 4.2.
-		}
-	}
-	else if runmode = 4.2
-	{
-		if rotCur[0] < 75 {
+		if rotCur[0] < 25 {
+			set ship:control:neutralize to true.
+			set stable to false.
+			lock steering to steer.
 			set steer to heading(lzPosFut:heading, 0).
-			rcs on.
 			set engStartup to true.
 			set runmode to 5.
+		} else {
+			if stable = false {
+				if stabilize() = true {
+					set stable to true.
+				}
+			} else {
+				startFlip(12).
+			}
 		}
 	}
 	else if runmode = 5 // boostback burn
 	{
 	
 		if 	rotCur[0] < 25 // making sure we point in the right direction before boostback burn
-			and rotCur[0] > -20
+			and rotCur[0] > -25
 		{
-			set steeringmanager:rolltorquefactor to 5.
+			set steeringmanager:maxstoppingtime to 2.
+			set steeringmanager:rolltorquefactor to 3.
 			
-			//if lzDistImp:mag > 500 and lzDistImp:mag < posOffset and impPosCur:position:mag > lzPosFut:position:mag {
 			if lzDistImp:mag < posOffset {
 				Engine["Stop"](list(
 					Merlin1D_1,
@@ -415,7 +432,6 @@ until runmode = 0 {
 				set engStartup to true.
 			} else {
 				rcs off.
-				set reorienting to false.
 				set ship:control:fore to 0.
 				set engStartup to false.
 			}
@@ -432,42 +448,54 @@ until runmode = 0 {
 				Merlin1D_2
 			)).
 			set tval to 0.
-			//set latOffset to 0.
+			unlock steering.
 			set runmode to 6.
 		}
 	}
 	else if runmode = 6 // Reorienting for reentry
 	{
 		rcs on.
-		set reorienting to true.
-		set steer to heading(rotCur[1], rotCur[0]).
+		stabilize().
 		set eventTime to mT + 3.
 		set runmode to 6.1.
+		set clearRequired to true.
 	}
 	else if runmode = 6.1
 	{
 		if mT > eventTime {
-			steeringConfig("reorientingSlow").
-			set clearRequired to true.
-			set steer to -body:position.
-			set runmode to 6.2.
+			if stable = false {
+				if stabilize() = true {
+					set stable to true.
+				}
+			} else {
+				startFlip2(1).
+			}
+			if rotCur[0] > 75 {
+				ag5 on.
+				set runmode to 6.2.
+			}
+		} else {
+			stabilize().
 		}
 	}
 	else if runmode = 6.2
-	{			
-		if 	rotCur[0] > 75 {
-			rcs off.
-			set runmode to 6.3.
-		}
-	}
-	else if runmode = 6.3
 	{
-		if rotCur[0] < 75 {
+		if rotCur[0] < 60 {
+			set ship:control:neutralize to true.
+			set stable to false.
+			set steeringmanager:maxstoppingtime to 1.
+			lock steering to steer.
 			set steer to -ship:velocity:surface.
-			rcs on.
-			ag5 on.
 			set engStartup to true.
 			set runmode to 7.
+		} else {
+			if stable = false {
+				if stabilize() = true {
+					set stable to true.
+				}
+			} else {
+				startFlip(1).
+			}
 		}
 	}
 	else if runmode = 7 // Reentry burn

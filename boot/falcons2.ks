@@ -59,6 +59,7 @@ set lT to startT + 10.
 print 1.
 wait until exists(storagePath + "/separated.ks").
 print 2.
+wait 0.5.
 
 lock throttle to max(0, min(1, tval)).
 lock steering to steer.
@@ -93,7 +94,7 @@ until runmode = 0 {
 	}
 	else if runmode = 3
 	{
-		if eventTime > mT {
+		if ship:obt:altitude > 100000 {
 			stage.
 			set runmode to 4.
 		}
