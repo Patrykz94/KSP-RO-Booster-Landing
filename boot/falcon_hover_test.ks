@@ -3,7 +3,7 @@ clearscreen.
 set ship:control:pilotmainthrottle to 0.
 wait 0.
 
-local storagePath is "Falcon9S1Storage:".
+local storagePath is "1:".
 if not exists(storagePath + "/libs") {
 	createdir(storagePath + "/libs").
 }
@@ -19,7 +19,7 @@ function libDl {
 	}
 }
 
-libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions", "falcon_functions")).
+libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions", "falcon_functions", "falcon_rcs")).
 
 // ---=== [**START**] [ DECLARING ALL NECESSARY VARIABLES ] [**START**] ===---
 
@@ -68,7 +68,7 @@ libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions
 	local sepDeltaV is 0.
 	
 	// \/ Need renaming \/ //
-	local posOffset is 0.
+	local posOffset is 4500.
 	local landingOffset is 0.
 	local landingOffset2 is 0.
 	local landingOffset3 is 0.
@@ -80,6 +80,7 @@ libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions
 	// STEERING VARIABLES
 
 	local tval is 0.
+	local stable is false.
 	
 	local steer is up.
 	local steerPitch is 0.
@@ -98,39 +99,29 @@ libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions
 	
 	local engReady is true.
 	local engStartup is false.
+	local engThrust is 0.
 		
 	// ---== PREPARING PID LOOPS ==--- //
 		// ----- Landing loops ----- //		
 		// Landing velocity control
-		local AltVel_PID is pidloop(0.45, 0, 0.3, -600, 0.1).
+		local AltVel_PID is pidloop(1, 0, 0.3, -100, 100).
 		local VelThr_PID is pidloop(2.1, 9, 0.15, 0.36, 1).
 		
 		// ----- Controlled descent loops ----- //
 		// Latitude control
-		local DescLatitudeChange_PID is pidloop(5, 0.02, 0.3, -0.1, 0.1).
-		local DescLatitude_PID is pidloop(300, 1, 150, -35, 35).
+		local DescLatitudeChange_PID is pidloop(7.5, 0, 0.1, -0.1, 0.1).
+		local DescLatitude_PID is pidloop(300, 1, 150, -10, 10).
 		// Longditude control
-		local DescLongitudeChange_PID is pidloop(5, 0.02, 0.3, -0.1, 0.1).
-		local DescLongitude_PID is pidloop(300, 1, 150, -35, 35).
+		local DescLongitudeChange_PID is pidloop(7.5, 0, 0.1, -0.1, 0.1).
+		local DescLongitude_PID is pidloop(300, 1, 150, -10, 10).
 
 		// ----- Final touch-down loops ----- //
 		// Latitude control
-		local LandLatitudeChange_PID is pidloop(7.5, 0, 12, -0.01, 0.01).
-		local LandLatitude_PID is pidloop(500, 0, 0, -5, 5).
+		local LandLatitudeChange_PID is pidloop(30, 0, 5, -0.05, 0.05).
+		local LandLatitude_PID is pidloop(500, 0, 150, -5, 5).
 		// Longditude control
-		local LandLongitudeChange_PID is pidloop(7.5, 0, 12, -0.01, 0.01).
-		local LandLongitude_PID is pidloop(500, 0, 0, -5, 5).
-		
-		// ----- Attitude control loops ----- //
-		// Pitch control
-		local PitchSpd_PID is pidloop(0.2, 0, 0.5, -5, 5).
-		local Pitch_PID is pidloop(0.8, 0, 0.3, -1, 1).
-		// Yaw control
-		local YawSpd_PID is pidloop(0.2, 0, 0.5, -5, 5).
-		local Yaw_PID is pidloop(0.8, 0, 0.3, -1, 1).
-		// Roll control
-		local RollSpd_PID is pidloop(0.4, 0, 0.3, -20, 20).
-		local Roll_PID is pidloop(0.2, 0, 0.1, -1, 1).
+		local LandLongitudeChange_PID is pidloop(30, 0, 5, -0.05, 0.05).
+		local LandLongitude_PID is pidloop(500, 0, 150, -5, 5).
 
 	// ---== END PID LOOPS ==--- //
 	
@@ -142,11 +133,13 @@ libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions
 	local sT is 0. // start of program
 	local pT is 0. // previous tick
 	local impT is 0.
-	local landBurnT is 1. // Landing burn time
-	local landBurnH is 0. // Landing burn height
+	local landBurnT is list(0.001). // Landing burn time
+	local landBurnH is list(0.001). // Landing burn height
 	local landBurnD is 0. // Landing burn distance
 	local landBurnS is 0. // Landing burn speed target
+	local landBurnEngs is 1.
 	local eventTime is 0.
+	local event is false.
 	
 	// MISSION PARAMETERS
 	
@@ -166,6 +159,7 @@ libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions
 	local vec5 is 0.
 	
 	local bodyRotation is 360 / body:rotationperiod.
+	local tr is addons:tr.
 	
 // ---=== [**END**] [ DECLARING ALL NECESSARY VARIABLES ] [**END**] ===---
 
@@ -178,16 +172,18 @@ libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions
 	set lT to sT + 10.
 	set posPrev to ship:geoposition.
 	set impPosPrev to ship:geoposition.
+	set impPosFut to ship:geoposition.
 	set rotPrev to list(pitch_for(ship), compass_for(ship), roll_for(ship)).
 	set steeringmanager:rollts to 15.
 	
 	if landing <> 0 {
 		if landing = 1 {
 			set lzPos to KSCLaunchPad.
+			tr:settarget(KSCLaunchPad).
 		}
 		
 		set lzAlt to lzPos:terrainheight.
-		when (altCur - lzAlt) < 500 and runmode > 2 then { gear on. }
+		when (altCur - lzAlt) < 200 and runmode > 2 then { gear on. }
 	} else {
 		set lzAlt to 0.
 	}
@@ -195,7 +191,7 @@ libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions
 	lock throttle to max(0, min(1, tval)).
 	lock steering to steer.
 	
-	log "dt, latDifference, latChange" to "0:/logfile.csv".
+	//createLog().
 
 // ---=== [**END**] [ GETTING NECESSARY DATA ] [**END**] ===---
 
@@ -210,6 +206,11 @@ until runmode = 0 {
 	set dT to mT - pT.
 	set altCur to body:altitudeof(Merlin1D_0:position) - 3.9981.
 	if landing <> 0 {
+		if merlinData[0] = false {
+			if tval = 1 and Merlin1D_0:ignition = true and Merlin1D_0:flameout = false {
+				set merlinData to list( true, Merlin1D_0:maxthrustat(1), Merlin1D_0:maxthrustat(0), Merlin1D_0:slisp, Merlin1D_0:visp).
+			}
+		}
 		set posCur to ship:geoposition.
 		set rotCur to list(pitch_for(ship), compass_for(ship), rollConvert()).
 		set rotSpd to list((mod(90 + rotCur[0] - rotPrev[0], 180) -90)/dT, mod(rotCur[1] - rotPrev[1], 360)/dT,(mod(180 + rotCur[2] - rotPrev[2], 360) -180)/dT).
@@ -220,21 +221,23 @@ until runmode = 0 {
 		set lzPosFut to latlng(lzPos:lat, mod(lzPos:lng + 180 + (impT * bodyRotation), 360) - 180).
 		
 		set impPosCur to latlng(body:geopositionof(positionat(ship, mT + impT)):lat, body:geopositionof(positionat(ship, mT + impT)):lng - 0.0000801).
-		set impPosFut to latlng(body:geopositionof(positionat(ship, mT + impT)):lat, body:geopositionof(positionat(ship, mT + impT)):lng - (impT * bodyRotation) - 0.0000801).
-		
-		set velLatImp to (mod(180 + impPosPrev:lat - impPosCur:lat, 360) - 180)/dT.
-		set velLngImp to (mod(180 + impPosPrev:lng - impPosCur:lng, 360) - 180)/dT.
+		if tr:hasimpact {
+			set impPosFut to tr:impactpos.
+		}// else {
+		//	set impPosFut to latlng(body:geopositionof(positionat(ship, mT + impT)):lat, body:geopositionof(positionat(ship, mT + impT)):lng - (impT * bodyRotation) - 0.0000801).
+		//}
+		set velLatImp to (mod(180 + impPosPrev:lat - impPosFut:lat, 360) - 180)/dT.
+		set velLngImp to (mod(180 + impPosPrev:lng - impPosFut:lng, 360) - 180)/dT.
 		
 		set lzDistCur to lzPos:position - ship:geoposition:altitudeposition(lzAlt).
-		set lzDistImp to lzPosFut:position - impPosCur:position.
+		set lzDistImp to lzPos:position - impPosFut:position.
 		set sepDeltaV to Fuel["Stage 1 DeltaV"]().
 		
 		set landingOffset to vxcl(lzPos:position - impPosFut:position - body:position, lzPos:position - impPosFut:position):normalized * posOffset.
-		set landingOffset2 to vxcl(lzPosFut:position - impPosCur:position - body:position, lzPosFut:position - impPosCur:position):normalized.
-		//set landingOffset3 to vxcl(lzPos:position -posCur:position - impPosFut:position - body:position, lzPos:position -posCur:position - impPosFut:position):normalized * posOffset.
+		set landingOffset2 to vxcl(lzPos:position - impPosFut:position - body:position, lzPos:position - impPosFut:position):normalized.
 		set landingOffset4 to (vxcl(lzPos:position - body:position, lzPos:position):normalized * (lzDistCur:mag/10)) + landingOffset.
 		
-		if runmode >= 1 {
+		if runmode >= 4 {
 			
 			// final landing loop
 			set velDir to ship:velocity:surface:normalized * 25.
@@ -253,11 +256,10 @@ until runmode = 0 {
 		}
 		
 		if runmode = 9 {
-			set landBurnT to max(0.1,mnv_time(ship:velocity:surface:mag, list(Merlin1D_0))).
-			//set landBurnD to altCur - lzAlt - verticalspeed * landBurnT + 0.5 * (ship:velocity:surface:mag/landBurnT) * landBurnT^2.
-			set landBurnH to verticalspeed^2 / (2*(ship:velocity:surface:mag/landBurnT - gravity())).
-			set landBurnD to altCur - lzAlt - landBurnH.
-			set landBurnS to -sqrt((altCur - lzAlt)*(2*(ship:velocity:surface:mag/landBurnT - gravity()))).
+			set landBurnT to landingBurnTime(ship:velocity:surface:mag, 1, 0.8).//max(0.1,mnv_time(ship:velocity:surface:mag, list(Merlin1D_0))) * 1.2.
+			set landBurnH to landBurnHeight().//verticalspeed^2 / (2*(ship:velocity:surface:mag/landBurnT - gravity())).
+			set landBurnD to altCur - lzAlt - landBurnH[0].//altCur - lzAlt - landBurnH.
+			set landBurnS to landBurnSpeed().//-sqrt((altCur - lzAlt)*(2*(ship:velocity:surface:mag/landBurnT - gravity()))).
 		}
 	}
 	
@@ -280,30 +282,108 @@ until runmode = 0 {
 		set tval to 1.
 		wait 3.
 		stage.
-		set AltVel_PID:setpoint to 2000.
-		set VelThr_PID:setpoint to 50.
 		set steerPitch to 0.
 		set steerYaw to 0.
 		set eventTime to mT.
 		set runmode to 2.
+		set AltVel_PID:setpoint to 15000.
 	} else if runmode = 2 {
-		if mT > eventTime + 20 { set VelThr_PID:setpoint to 0. }
-		if mT > eventTime + 5 {
-			set LandLatitudeChange_PID:setpoint to lzPosFut:lat.
-			set LandLatitude_PID:setpoint to LandLatitudeChange_PID:update(mT, impPosCur:lat).
-			set steerPitch to -LandLatitude_PID:update(mT, velLatCur).
-			
-			set LandLongitudeChange_PID:setpoint to lzPosFut:lng.
-			set LandLongitude_PID:setpoint to LandLongitudeChange_PID:update(mT, impPosCur:lng).
-			set steerYaw to -LandLongitude_PID:update(mT, velLngCur).
-		}
+		set VelThr_PID:setpoint to AltVel_PID:update(mt, altCur).
 		
 		Engine["Throttle"](
 		list(
 			list(Merlin1D_0, (VelThr_PID:update(mT, verticalspeed)*100)/cos(vang(up:vector, ship:facing:forevector)))
 		)).
-		set steer to up + r(steerPitch, steerYaw, 90).
-		log dt + "," + (lzPos:lat - latitude) + "," + LandLatitudeChange_PID:output to "0:/logfile.csv".
+		set steer to up.// + r(steerPitch, steerYaw, 90).
+		if sepDeltaV < 600 {
+			set AltVel_PID:setpoint to lzAlt.
+			set tval to 0.
+			Engine["Stop"](list(
+				Merlin1D_0
+			)).
+			if verticalspeed < -50 {
+				when timeToAltitude(landBurnH[0] + lzAlt, altCur) < 3 and altCur - lzAlt < 6000 then {
+					set tval to 1.
+					if landBurnEngs = 1 {
+						Engine["Start"](list(
+							Merlin1D_0
+						)).
+					} else {
+						Engine["Start"](list(
+							Merlin1D_0,
+							Merlin1D_1,
+							Merlin1D_2
+						)).
+					}
+				}
+				ag5 on.
+				set runmode to 9.
+			}
+		}
+	}
+	else if runmode = 9
+	{
+		set VelThr_PID:setpoint to landBurnS.
+		//if landBurnH[1] = 0 {
+			Engine["Stop"](list(
+				Merlin1D_1,
+				Merlin1D_2
+			)).
+		//}
+		set engThrust to (VelThr_PID:update(mT, verticalspeed)*100)/cos(vang(up:vector, ship:facing:forevector)).
+		Engine["Throttle"](
+		list(
+			list(Merlin1D_0, engThrust),
+			list(Merlin1D_1, engThrust),
+			list(Merlin1D_2, engThrust)
+		)).
+		
+		if tval = 0 {
+			
+			set posOffset to min(1500, lzDistImp:mag).
+			
+			set DescLatitudeChange_PID:setpoint to body:geopositionof(lzPos:position + landingOffset4):lat. // steering
+			set DescLatitude_PID:setpoint to DescLatitudeChange_PID:update(mT, impPosFut:lat).
+			set steerPitch to -DescLatitude_PID:update(mT, velLatImp).
+			
+			set DescLongitudeChange_PID:setpoint to body:geopositionof(lzPos:position + landingOffset4):lng.
+			set DescLongitude_PID:setpoint to DescLongitudeChange_PID:update(mT, impPosFut:lng).
+			set steerYaw to -DescLongitude_PID:update(mT, velLngImp).
+			
+		} else {
+			
+			set posOffset to 0.001.
+			
+			set LandLatitudeChange_PID:setpoint to lzPos:lat.
+			set LandLatitude_PID:setpoint to LandLatitudeChange_PID:update(mT, impPosFut:lat).
+			set steerPitch to -LandLatitude_PID:update(mT, velLatImp).
+			
+			set LandLongitudeChange_PID:setpoint to lzPos:lng.
+			set LandLongitude_PID:setpoint to LandLongitudeChange_PID:update(mT, impPosFut:lng).
+			set steerYaw to -LandLongitude_PID:update(mT, velLngImp).
+			
+		}
+		
+		if VelThr_PID:output < 0.4 or tval = 0 {
+			set steerPitch to -steerPitch.
+			set steerYaw to -steerYaw.
+		}
+		
+		if altCur < lzAlt + 200 or verticalspeed > 0 {
+			set steer to up + r(steerPitch, steerYaw, 90).
+		} else {
+			set steer to (-ship:velocity:surface):direction + r(steerPitch, steerYaw, 90).
+		}
+		if ship:status = "Landed" {
+			set runmode to 0.
+			Engine["Stop"](list(
+				Merlin1D_0,
+				Merlin1D_1,
+				Merlin1D_2
+			)).
+			set tval to 0.
+			set steer to up.
+		}
 	}
 	
 	// stuff that needs to update after every iteration
@@ -314,55 +394,59 @@ until runmode = 0 {
 	
 	
 	displayFlightData().
-	if runmode < 1 {
+	if runmode < 4 {
 		displayLaunchData().
 	}
+	//displayF9Data().
 	
-	if runmode >= 1 {
+	if runmode >= 8 {
 		
 		set vec1 to vecdraw(ship:position, impPosFut:position, rgb(1,0,0), "Imp", 1, true).
 		set vec2 to vecdraw(ship:position, posCur:position, rgb(0,1,0), "Pos", 1, true).
-		//set vec3 to vecdraw(ship:position, lzPos:position + landingOffset, rgb(0,0,1), "LO", 1, true).
-		//set vec4 to vecdraw(ship:position, lzPos:position + landingOffset3, rgb(1,0.3,0), "LO3", 1, true).
-		set vec5 to vecdraw(ship:position, lzPos:position, rgb(1,1,1), "LO4", 1, true).
+		//set vec3 to vecdraw(ship:position, tr:plannedvec:normalized * 50, rgb(0,0,1), "PlaV", 1, true).
+		//set vec4 to vecdraw(ship:position, tr:correctedvec:normalized * 50, rgb(1,0.3,0), "CorV", 1, true).
+		set vec5 to vecdraw(ship:position, lzPos:position + landingOffset4, rgb(1,1,1), "LO4", 1, true).
 		
 	}
 	
-	if runmode >= 1 {
-		print "Current Position:          " + round(longitude, 7) + ", " + round(latitude, 7) + "             " at (3,20).
-		print "Impact Position:           " + round(impPosFut:lng, 7) + ", " + round(impPosFut:lat, 7) + "             " at (3,21).
+	if runmode >= 4 {
+		//print "Current Position:          " + round(longitude, 3) + ", " + round(latitude, 3) + "             " at (3,20).
+		//print "Impact Position:           " + round(impPosFut:lng, 3) + ", " + round(impPosFut:lat, 3) + "             " at (3,21).
 		
 		print "Impact Time:               " + round(impT, 2) + "     " at (3, 23).
-		print "Current Angle:             " + round(vang(up:vector, ship:facing:forevector), 3) + "     " at (3, 29).
-		print "Impact Distance:           " + round(lzDistImp:mag, 2) + "          " at (3, 24).
+		//print "Suicide Burn Time:         " + round(landBurnT, 2) + "     " at (3, 24).
+		print "Impact Distance:           " + round(lzDistImp:mag, 2) + "          " at (3, 25).
 		
-		print "Position offset:           " + round(posOffset, 2) + "           " at (3, 26).
-		print "Distance to LZ:            " + round(lzDistCur:mag, 2) + "           " at (3, 27).
+		print "Position offset:           " + round(posOffset, 2) + "           " at (3, 27).
+		print "Distance to LZ:            " + round(lzDistCur:mag, 2) + "           " at (3, 28).
 		
 		print "Steer Latitude:            " + round(steerPitch, 2) + "     " at (3, 30).
 		print "Steer Longitude:           " + round(steerYaw, 2) + "     " at (3, 31).
 		
-		print "Latitude Velocity          " + round(velLatImp, 8) + "             " at (3, 33).
-		print "Longitude Velocity         " + round(velLngImp, 8) + "             " at (3, 34).
-		
+		print "Latitude Velocity          " + round(velLatImp, 4) + "         " at (3, 33).
+		print "Longitude Velocity         " + round(velLngImp, 4) + "         " at (3, 34).
 	}
-	print "Latitude PID:              " + round(LandLatitudeChange_PID:output, 4) + "        " at (3, 36).
-	print "Steering PID:              " + round(LandLatitude_PID:output, 4) + "        " at (3, 37).
-	print "Mission Time:              " + round(mT,2) + "              " at (3, 39).
+	print "Runmode:                   " + runmode + "     " at (3, 36).
+	print "DeltaV remaining:          " + round(sepDeltaV) + "     " at (3, 37).
+	print "PID loop KP:               " + round(DescLatitudeChange_PID:kp, 2) + "     " at (3, 38).
 	
 	if runmode = 9 {
-	print "Landing Burn Time:         " + round(landBurnT,1) + "     " at (3, 40).
-	print "Landing Burn Distance:     " + round(landBurnH) + "     " at (3, 41).
-	print "Dist until Landing Burn:   " + round(landBurnD) + "     " at (3, 42).
-	print "Landing Burn Speed:        " + round(landBurnS) + "     " at (3, 43).
-	print "Current Speed:             " + round(verticalspeed) + "     " at (3, 44).
+		//print "T1:                        " + round(landBurnT[1], 5) + "     " at (3, 40).
+		//print "T2:                        " + round(landBurnT[2], 5) + "     " at (3, 41).
+		print "T1 + T2:                   " + round(landBurnT[0], 5) + "     " at (3, 42).
+		
+		//print "Height 1:                  " + round(landBurnH[1], 5) + "     " at (3, 44).
+		//print "Height 2:                  " + round(landBurnH[2], 5) + "     " at (3, 45).
+		print "Height 1 + Height 2:       " + round(landBurnH[0], 5) + "     " at (3, 46).
+		
+		print "landBurnS                  " + round(landBurnS, 2) + "     " at (3, 48).
 	}
 	
 	// ---=== [**START**] [ UPDATING VARIABLES AFTER EVERY ITERATION ] [**START**] ===--- //
 	
 	set pT to mT.
 	set posPrev to posCur.
-	set impPosPrev to impPosCur.
+	set impPosPrev to impPosFut.
 	set rotPrev to rotCur.
 
 	// ---=== [**END**] [ UPDATING VARIABLES AFTER EVERY ITERATION ] [**END**] ===--- //

@@ -84,7 +84,11 @@ function startFlip {
 	killRoll(0.1).
 	killYaw(0.1).
 	set Pitch_PID:setpoint to flipSpeed.
-	set ship:control:pitch to Pitch_PID:update(time:seconds, -ship:angularmomentum:x/150).
+	if (-ship:angularmomentum:x/150) < flipSpeed * 0.95 or (-ship:angularmomentum:x/150) > flipSpeed * 1.05 {
+		set ship:control:pitch to Pitch_PID:update(time:seconds, -ship:angularmomentum:x/150).
+	} else {
+		set ship:control:pitch to 0.
+	}
 }
 
 function startFlip2 {

@@ -20,9 +20,12 @@
 		
 	local ullageReq is false.
 	
+	local merlinData is list( false ).
+	
 // ---=== [**START**] [ DECLARING VARIABLES ] [**START**] ===--- //
 
 { // Falcon Engine Management Functions (FEMF..)
+	
 	function startEngine {
 		parameter engineList.
 		local engineReady is true.
@@ -100,7 +103,7 @@
 // Falcon Fuel Control Functions (FFCF..)
 
 {
-	local f9DryMass is 23.0644756622314.
+	local f9DryMass is 22.9364756622314.
 	local f9tank is ship:partstagged("Falcon9-S1-Tank")[0].
 	
 	function getF9DeltaV {
@@ -138,4 +141,79 @@ function landingDeltaV { // Calculating the deltaV required at separation
 	}
 	
 	return delv.
+}
+
+function landingBurnTime {
+	parameter dv.
+	parameter ensNo is 1.
+	parameter thrustL is 1.
+	//local dv2 is 50.
+	//local dv1 is max(0, dv - dv2).
+	local ens is list().
+	if ensNo = 1 {
+		set ens to list(Merlin1D_0).
+	} else if ensNo = 3 {
+		set ens to list(Merlin1D_0, Merlin1D_1, Merlin1D_2).
+	}
+	local ens_thrust is 0.
+	local ens_isp is 0.
+
+	for en in ens {
+		if en:isp = 0 or en:maxthrust = 0 {
+			if merlinData[0] = true {
+				set ens_thrust to ens_thrust + merlinData[1].
+				set ens_isp to ens_isp + merlinData[3].
+			}
+		} else {
+			set ens_thrust to ens_thrust + en:maxthrust.
+			set ens_isp to ens_isp + en:isp.
+		}
+	}
+
+	if ens_thrust = 0 or ens_isp = 0 {
+		//notify("No engines available!").
+		return 0.
+	} else {
+		local f1 is ens_thrust * thrustL * 1000.  // engine thrust (kg * m/s²)
+		//local f2 is ens_thrust/ens:length * 0.4 * 1000.  // engine thrust (kg * m/s²)
+		local m is ship:mass * 1000.        // starting mass (kg)
+		local e is constant():e.            // base of natural log
+		local p is ens_isp/ens:length.               // engine isp (s) support to average different isp values
+		local g is ship:orbit:body:mu/ship:obt:body:radius^2.    // gravitational acceleration constant (m/s²)
+		
+		//local t2 is g * m * p * (1 - e^(-dv2/(g*p))) / f2.
+		//if dv1 = 0 {
+		//	return list(max(0.001, t2), 0.001, max(0.001, t2)).
+		//} else {
+		//	local t1 is g * m * p * (1 - e^(-dv1/(g*p))) / f1.
+		//	return list(max(0.001, t1+t2), max(0.001, t1), max(0.001, t2)).
+		//}
+		return list(g * m * p * (1 - e^(-dv/(g*p))) / f1).
+	}
+}
+
+function landBurnHeight {
+	if verticalspeed < 0 {
+		local height1 is 0.
+		//local height2 is min(50, ship:velocity:surface:mag)^2 / (2*(min(50, ship:velocity:surface:mag)/landBurnT[2] - gravity())).
+		//if ship:velocity:surface:mag > 50 {
+		set height1 to ship:velocity:surface:mag^2 / (2*(ship:velocity:surface:mag/landBurnT[0] - gravity())).
+		return list(height1).
+		//} else {
+		//	set height1 to 0.
+		//}
+		//return list(max(0.001, height1+height2), max(0.001, height1), max(0.001, height2)).
+	} else {
+		return list(0.001,0.001,0.001).
+	}
+}
+
+function landBurnSpeed {
+	//if ship:velocity:surface:mag > 50 {
+	//	return -sqrt((altCur - lzAlt)*(2*(ship:velocity:surface:mag/landBurnT[1] - gravity()))). //Speed 1
+	//} else {
+		return -sqrt((altCur - lzAlt)*(2*(ship:velocity:surface:mag/landBurnT[0] - gravity()))). //Speed 2
+	//}
+	
+	//set landBurnS to -sqrt((altCur - lzAlt)*(2*(ship:velocity:surface:mag/landBurnT - gravity()))).
 }
