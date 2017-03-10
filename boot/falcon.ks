@@ -32,7 +32,7 @@ libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions
 	// You can do it by typing "run boot_testflight(250,90,1)."
 
 	parameter orbAlt is 200. // Default target altitude
-	parameter orbDir is 0.  // Default launch direction (landing only works on launching to 90 degrees)
+	parameter orbDir is 90.  // Default launch direction (landing only works on launching to 90 degrees)
 	parameter landing is 1.  // Landing site
 	set orbAlt to orbAlt * 1000.
 
@@ -68,7 +68,7 @@ libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions
 	local sepDeltaV is 0.
 	
 	// \/ Need renaming \/ //
-	local posOffset is 4500.
+	local posOffset is 6000.
 	local landingOffset is 0.
 	local landingOffset2 is 0.
 	local landingOffset3 is 0.
@@ -109,18 +109,18 @@ libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions
 		
 		// ----- Controlled descent loops ----- //
 		// Latitude control
-		local DescLatitudeChange_PID is pidloop(5, 0.02, 0.3, -0.1, 0.1).
+		local DescLatitudeChange_PID is pidloop(20, 0, 5, -0.1, 0.1).
 		local DescLatitude_PID is pidloop(300, 1, 150, -10, 10).
 		// Longditude control
-		local DescLongitudeChange_PID is pidloop(5, 0.02, 0.3, -0.1, 0.1).
+		local DescLongitudeChange_PID is pidloop(20, 0, 5, -0.1, 0.1).
 		local DescLongitude_PID is pidloop(300, 1, 150, -10, 10).
 
 		// ----- Final touch-down loops ----- //
 		// Latitude control
-		local LandLatitudeChange_PID is pidloop(30, 0, 5, -0.05, 0.05).
+		local LandLatitudeChange_PID is pidloop(60, 0, 10, -0.05, 0.05).
 		local LandLatitude_PID is pidloop(500, 0, 150, -5, 5).
 		// Longditude control
-		local LandLongitudeChange_PID is pidloop(30, 0, 5, -0.05, 0.05).
+		local LandLongitudeChange_PID is pidloop(60, 0, 10, -0.05, 0.05).
 		local LandLongitude_PID is pidloop(500, 0, 150, -5, 5).
 
 	// ---== END PID LOOPS ==--- //
@@ -222,9 +222,7 @@ until runmode = 0 {
 		set impPosCur to latlng(body:geopositionof(positionat(ship, mT + impT)):lat, body:geopositionof(positionat(ship, mT + impT)):lng - 0.0000801).
 		if tr:hasimpact {
 			set impPosFut to tr:impactpos.
-		}// else {
-		//	set impPosFut to latlng(body:geopositionof(positionat(ship, mT + impT)):lat, body:geopositionof(positionat(ship, mT + impT)):lng - (impT * bodyRotation) - 0.0000801).
-		//}
+		}
 		set velLatImp to (mod(180 + impPosPrev:lat - impPosFut:lat, 360) - 180)/dT.
 		set velLngImp to (mod(180 + impPosPrev:lng - impPosFut:lng, 360) - 180)/dT.
 		
@@ -234,7 +232,7 @@ until runmode = 0 {
 		
 		set landingOffset to vxcl(lzPos:position - impPosFut:position - body:position, lzPos:position - impPosFut:position):normalized * posOffset.
 		set landingOffset2 to vxcl(lzPos:position - impPosFut:position - body:position, lzPos:position - impPosFut:position):normalized.
-		set landingOffset4 to (vxcl(lzPos:position - body:position, lzPos:position):normalized * (lzDistCur:mag/10)) + landingOffset.
+		set landingOffset4 to (vxcl(lzPos:position - body:position, lzPos:position):normalized * (lzDistCur:mag/4)) + landingOffset.
 		
 		if runmode >= 4 {
 			set velDir to ship:velocity:surface:normalized * 25.
@@ -249,7 +247,7 @@ until runmode = 0 {
 		}
 		
 		if runmode = 9 {
-			set landBurnT to landingBurnTime(ship:velocity:surface:mag, 1, 0.7).
+			set landBurnT to landingBurnTime(ship:velocity:surface:mag, 1, 0.9).
 			set landBurnH to landBurnHeight().
 			set landBurnD to altCur - lzAlt - landBurnH[0].
 			set landBurnS to landBurnSpeed().
@@ -386,8 +384,8 @@ until runmode = 0 {
 	else if runmode = 5 // boostback burn
 	{
 	
-		if 	rotCur[0] < 25 // making sure we point in the right direction before boostback burn
-			and rotCur[0] > -25
+		if 	rotCur[0] < 30 // making sure we point in the right direction before boostback burn
+			and rotCur[0] > -30
 		{
 			set steeringmanager:maxstoppingtime to 2.
 			set steeringmanager:rolltorquefactor to 3.
@@ -501,7 +499,7 @@ until runmode = 0 {
 			set reorienting to false.
 			set tval to 1.
 			
-			if lzDistImp:mag > (posOffset * 1.5) {
+			if lzDistImp:mag > (posOffset * 1.1) {
 				Engine["Throttle"](list(
 					list(Merlin1D_0, 75),
 					list(Merlin1D_1, 75),
@@ -555,7 +553,7 @@ until runmode = 0 {
 		if altCur < 45000
 		{
 			set runmode to 9.
-			when timeToAltitude(landBurnH[0] + lzAlt, altCur) < 3 and altCur - lzAlt < 5000 then {
+			when timeToAltitude(landBurnH[0] + lzAlt, altCur) < 3 and altCur - lzAlt < 3500 then {
 				set tval to 1.
 				if landBurnEngs = 1 {
 					Engine["Start"](list(
@@ -581,12 +579,13 @@ until runmode = 0 {
 			list(Merlin1D_1, engThrust),
 			list(Merlin1D_2, engThrust)
 		)).
-		set DescLatitudeChange_PID:kp to min(25, max(5, 25 - altCur/1000)).
-		set DescLongitudeChange_PID:kp to min(25, max(5, 25 - altCur/1000)).
+		
+		set DescLatitudeChange_PID:kp to max(5, min(40, 40-((altCur/1000 -5)*1.75))).
+		set DescLongitudeChange_PID:kp to max(5, min(40, 40-((altCur/1000 -5)*1.75))).
 		
 		if tval = 0 {
 			
-			set posOffset to min(1500, lzDistImp:mag).
+			set posOffset to max(-1500, min(1500, lzDistImp:mag)).
 			
 			set DescLatitudeChange_PID:setpoint to body:geopositionof(lzPos:position + landingOffset4):lat. // steering
 			set DescLatitude_PID:setpoint to DescLatitudeChange_PID:update(mT, impPosFut:lat).
@@ -598,19 +597,19 @@ until runmode = 0 {
 			
 		} else {
 			
-			set posOffset to 0.001.
+			set posOffset to max(-200, min(200, lzDistImp:mag/2)).
 			
-			set LandLatitudeChange_PID:setpoint to lzPos:lat.
+			set LandLatitudeChange_PID:setpoint to body:geopositionof(lzPos:position + landingOffset4):lat.
 			set LandLatitude_PID:setpoint to LandLatitudeChange_PID:update(mT, impPosFut:lat).
 			set steerPitch to -LandLatitude_PID:update(mT, velLatImp).
 			
-			set LandLongitudeChange_PID:setpoint to lzPos:lng.
+			set LandLongitudeChange_PID:setpoint to body:geopositionof(lzPos:position + landingOffset4):lng.
 			set LandLongitude_PID:setpoint to LandLongitudeChange_PID:update(mT, impPosFut:lng).
 			set steerYaw to -LandLongitude_PID:update(mT, velLngImp).
 			
 		}
 		
-		if VelThr_PID:output < 0.4 or tval = 0 {
+		if (VelThr_PID:output < 0.5 or tval = 0) and ship:velocity:surface:mag > 150 {
 			set steerPitch to -steerPitch.
 			set steerYaw to -steerYaw.
 		}
@@ -643,16 +642,12 @@ until runmode = 0 {
 	if runmode < 4 {
 		displayLaunchData().
 	}
-	//displayF9Data().
 	
 	if runmode >= 8 {
 		
 		set vec1 to vecdraw(ship:position, impPosFut:position, rgb(1,0,0), "Imp", 1, true).
 		set vec2 to vecdraw(ship:position, posCur:position, rgb(0,1,0), "Pos", 1, true).
-		//set vec3 to vecdraw(ship:position, tr:plannedvec:normalized * 50, rgb(0,0,1), "PlaV", 1, true).
-		//set vec4 to vecdraw(ship:position, tr:correctedvec:normalized * 50, rgb(1,0.3,0), "CorV", 1, true).
 		set vec5 to vecdraw(ship:position, lzPos:position + landingOffset4, rgb(1,1,1), "LO4", 1, true).
-		
 	}
 	
 	if runmode >= 4 {
@@ -697,5 +692,7 @@ until runmode = 0 {
 	
 	wait 0.
 }
-
+set vec1:show to false.
+set vec2:show to false.
+set vec5:show to false.
 unlock all.

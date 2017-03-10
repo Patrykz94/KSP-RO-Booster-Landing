@@ -132,9 +132,9 @@ function landingDeltaV { // Calculating the deltaV required at separation
 	
 	if landing <> 0 {
 		if landing <= 10 {
-			set delv to (groundspeed * 1.5) + 700 + 500.
+			set delv to (groundspeed * 1.4) + 800 + 400.
 		} else if landing <= 20 {
-			set delv to (groundspeed * 0.75) + 700 + 400.
+			set delv to (groundspeed * 0.75) + 800 + 400.
 		} else {
 			set delv to (groundspeed * 0.4) + 300.
 		}

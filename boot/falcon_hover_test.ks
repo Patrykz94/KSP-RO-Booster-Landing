@@ -117,10 +117,10 @@ libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions
 
 		// ----- Final touch-down loops ----- //
 		// Latitude control
-		local LandLatitudeChange_PID is pidloop(30, 0, 5, -0.05, 0.05).
+		local LandLatitudeChange_PID is pidloop(60, 0, 15, -0.05, 0.05).
 		local LandLatitude_PID is pidloop(500, 0, 150, -5, 5).
 		// Longditude control
-		local LandLongitudeChange_PID is pidloop(30, 0, 5, -0.05, 0.05).
+		local LandLongitudeChange_PID is pidloop(60, 0, 15, -0.05, 0.05).
 		local LandLongitude_PID is pidloop(500, 0, 150, -5, 5).
 
 	// ---== END PID LOOPS ==--- //
@@ -340,7 +340,7 @@ until runmode = 0 {
 		
 		if tval = 0 {
 			
-			set posOffset to min(1500, lzDistImp:mag).
+			set posOffset to max(-2000, min(2000, lzDistImp:mag - (lzDistCur:mag/4))).
 			
 			set DescLatitudeChange_PID:setpoint to body:geopositionof(lzPos:position + landingOffset4):lat. // steering
 			set DescLatitude_PID:setpoint to DescLatitudeChange_PID:update(mT, impPosFut:lat).
@@ -352,19 +352,19 @@ until runmode = 0 {
 			
 		} else {
 			
-			set posOffset to 0.001.
+			set posOffset to max(-200, min(200, lzDistImp:mag/2)).
 			
-			set LandLatitudeChange_PID:setpoint to lzPos:lat.
+			set LandLatitudeChange_PID:setpoint to body:geopositionof(lzPos:position + landingOffset4):lat.
 			set LandLatitude_PID:setpoint to LandLatitudeChange_PID:update(mT, impPosFut:lat).
 			set steerPitch to -LandLatitude_PID:update(mT, velLatImp).
 			
-			set LandLongitudeChange_PID:setpoint to lzPos:lng.
+			set LandLongitudeChange_PID:setpoint to body:geopositionof(lzPos:position + landingOffset4):lng.
 			set LandLongitude_PID:setpoint to LandLongitudeChange_PID:update(mT, impPosFut:lng).
 			set steerYaw to -LandLongitude_PID:update(mT, velLngImp).
 			
 		}
 		
-		if VelThr_PID:output < 0.4 or tval = 0 {
+		if (VelThr_PID:output < 0.4 or tval = 0) and ship:velocity:surface:mag > 150 {
 			set steerPitch to -steerPitch.
 			set steerYaw to -steerYaw.
 		}
