@@ -71,8 +71,6 @@ libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions
 	local posOffset is 6000.
 	local landingOffset is 0.
 	local landingOffset2 is 0.
-	local landingOffset3 is 0.
-	local landingOffset4 is 0.
 	local dirRet is 0.
 	local dirVecOffset is 0.
 	local desiredDir is 0.
@@ -154,8 +152,6 @@ libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions
 	local vec1 is 0.
 	local vec2 is 0.
 	local vec3 is 0.
-	local vec4 is 0.
-	local vec5 is 0.
 	
 	local bodyRotation is 360 / body:rotationperiod.
 	local tr is addons:tr.
@@ -174,6 +170,8 @@ libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions
 	set impPosFut to ship:geoposition.
 	set rotPrev to list(pitch_for(ship), compass_for(ship), roll_for(ship)).
 	set steeringmanager:rollts to 15.
+	set steeringmanager:pitchts to 15.
+	set steeringmanager:yawts to 15.
 	
 	if landing <> 0 {
 		if landing = 1 {
@@ -230,17 +228,16 @@ until runmode = 0 {
 		set lzDistImp to lzPos:position - impPosFut:position.
 		set sepDeltaV to Fuel["Stage 1 DeltaV"]().
 		
-		set landingOffset to vxcl(lzPos:position - impPosFut:position - body:position, lzPos:position - impPosFut:position):normalized * posOffset.
-		set landingOffset2 to vxcl(lzPos:position - impPosFut:position - body:position, lzPos:position - impPosFut:position):normalized.
-		set landingOffset4 to (vxcl(lzPos:position - body:position, lzPos:position):normalized * (lzDistCur:mag/4)) + landingOffset.
+		set landingOffset to vxcl(lzDistImp - body:position, lzDistImp):normalized * posOffset.
+		set landingOffset2 to (vxcl(lzPos:position - body:position, lzPos:position):normalized * (lzDistCur:mag/6)) + landingOffset.
 		
 		if runmode >= 4 {
 			set velDir to ship:velocity:surface:normalized * 25.
 			set velDirFlat to vxcl(ship:velocity:surface - body:position, ship:velocity:surface):normalized * 25.
 			if runmode < 7 {
-				set desiredDir to (vxcl((velDir - (velDir - (landingOffset2:normalized * 25))*2) - body:position, (velDir - (velDir - (landingOffset2:normalized * 25))*2)):normalized * 25) - (body:position:normalized * 1).
+				set desiredDir to (vxcl((velDir - (velDir - (landingOffset:normalized * 25))*2) - body:position, (velDir - (velDir - (landingOffset:normalized * 25))*2)):normalized * 25) - (body:position:normalized * 1).
 			} else {
-				set dirRet to (velDirFlat - (landingOffset2:normalized * 25)*2):normalized * 25.
+				set dirRet to (velDirFlat - (landingOffset:normalized * 25)*2):normalized * 25.
 				set dirVecOffset to dirRet - velDirFlat.
 				set desiredDir to (-dirVecOffset - velDir):normalized * 25.
 			}
@@ -319,6 +316,21 @@ until runmode = 0 {
 				rcs on.
 				set eventTime to mT + 2.
 				set runmode to 3.1.
+			} else if sepDeltaV < landingDeltaV(landing) + 50 {
+				Engine["Stop"](list(
+					Merlin1D_1,
+					Merlin1D_2,
+					Merlin1D_3,
+					Merlin1D_4,
+					Merlin1D_5,
+					Merlin1D_6,
+					Merlin1D_7,
+					Merlin1D_8
+				)).
+				Engine["Throttle"](
+				list(
+					list(Merlin1D_0, max(36, min(100, (sepDeltaV - landingDeltaV(landing))*2)))
+				)).
 			}
 		} else {
 			if Merlin1D_0:ignition and Merlin1D_0:flameout {
@@ -395,10 +407,12 @@ until runmode = 0 {
 					Merlin1D_1,
 					Merlin1D_2
 				)).
-				Engine["Throttle"](
-				list(
-					list(Merlin1D_0, 36)
-				)).
+				if impPosFut:position:mag > lzPos:position:mag {
+					Engine["Throttle"](
+					list(
+						list(Merlin1D_0, max(36, min(100, (lzDistImp:mag - posOffset)/50 )))
+					)).
+				}
 			} else {
 				Engine["Throttle"](
 				list(
@@ -540,16 +554,7 @@ until runmode = 0 {
 	}
 	else if runmode = 8
 	{
-		
-		set DescLatitudeChange_PID:setpoint to body:geopositionof(lzPos:position + landingOffset4):lat.
-		set DescLatitude_PID:setpoint to DescLatitudeChange_PID:update(mT, impPosFut:lat).
-		set steerPitch to DescLatitude_PID:update(mT, velLatImp).
-		
-		set DescLongitudeChange_PID:setpoint to body:geopositionof(lzPos:position + landingOffset4):lng.
-		set DescLongitude_PID:setpoint to DescLongitudeChange_PID:update(mT, impPosFut:lng).
-		set steerYaw to DescLongitude_PID:update(mT, velLngImp).
-		
-		set steer to (-ship:velocity:surface):direction + r(steerPitch, steerYaw, 0).
+		set steer to -ship:velocity:surface.
 		if altCur < 45000
 		{
 			set runmode to 9.
@@ -580,18 +585,18 @@ until runmode = 0 {
 			list(Merlin1D_2, engThrust)
 		)).
 		
-		set DescLatitudeChange_PID:kp to max(5, min(40, 40-((altCur/1000 -5)*1.75))).
-		set DescLongitudeChange_PID:kp to max(5, min(40, 40-((altCur/1000 -5)*1.75))).
+		set DescLatitudeChange_PID:kp to max(5, min(60, 60-((altCur/1000)*3))).
+		set DescLongitudeChange_PID:kp to max(5, min(60, 60-((altCur/1000)*3))).
 		
 		if tval = 0 {
 			
 			set posOffset to max(-1500, min(1500, lzDistImp:mag)).
 			
-			set DescLatitudeChange_PID:setpoint to body:geopositionof(lzPos:position + landingOffset4):lat. // steering
+			set DescLatitudeChange_PID:setpoint to body:geopositionof(lzPos:position + landingOffset2):lat. // steering
 			set DescLatitude_PID:setpoint to DescLatitudeChange_PID:update(mT, impPosFut:lat).
 			set steerPitch to -DescLatitude_PID:update(mT, velLatImp).
 			
-			set DescLongitudeChange_PID:setpoint to body:geopositionof(lzPos:position + landingOffset4):lng.
+			set DescLongitudeChange_PID:setpoint to body:geopositionof(lzPos:position + landingOffset2):lng.
 			set DescLongitude_PID:setpoint to DescLongitudeChange_PID:update(mT, impPosFut:lng).
 			set steerYaw to -DescLongitude_PID:update(mT, velLngImp).
 			
@@ -599,11 +604,11 @@ until runmode = 0 {
 			
 			set posOffset to max(-200, min(200, lzDistImp:mag/2)).
 			
-			set LandLatitudeChange_PID:setpoint to body:geopositionof(lzPos:position + landingOffset4):lat.
+			set LandLatitudeChange_PID:setpoint to body:geopositionof(lzPos:position + landingOffset2):lat.
 			set LandLatitude_PID:setpoint to LandLatitudeChange_PID:update(mT, impPosFut:lat).
 			set steerPitch to -LandLatitude_PID:update(mT, velLatImp).
 			
-			set LandLongitudeChange_PID:setpoint to body:geopositionof(lzPos:position + landingOffset4):lng.
+			set LandLongitudeChange_PID:setpoint to body:geopositionof(lzPos:position + landingOffset2):lng.
 			set LandLongitude_PID:setpoint to LandLongitudeChange_PID:update(mT, impPosFut:lng).
 			set steerYaw to -LandLongitude_PID:update(mT, velLngImp).
 			
@@ -647,7 +652,7 @@ until runmode = 0 {
 		
 		set vec1 to vecdraw(ship:position, impPosFut:position, rgb(1,0,0), "Imp", 1, true).
 		set vec2 to vecdraw(ship:position, posCur:position, rgb(0,1,0), "Pos", 1, true).
-		set vec5 to vecdraw(ship:position, lzPos:position + landingOffset4, rgb(1,1,1), "LO4", 1, true).
+		set vec3 to vecdraw(ship:position, lzPos:position + landingOffset2, rgb(1,1,1), "LO2", 1, true).
 	}
 	
 	if runmode >= 4 {
@@ -694,5 +699,5 @@ until runmode = 0 {
 }
 set vec1:show to false.
 set vec2:show to false.
-set vec5:show to false.
+set vec3:show to false.
 unlock all.
