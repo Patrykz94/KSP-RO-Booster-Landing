@@ -169,9 +169,6 @@ libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions
 	set impPosPrev to ship:geoposition.
 	set impPosFut to ship:geoposition.
 	set rotPrev to list(pitch_for(ship), compass_for(ship), roll_for(ship)).
-	set steeringmanager:rollts to 15.
-	set steeringmanager:pitchts to 15.
-	set steeringmanager:yawts to 15.
 	
 	if landing <> 0 {
 		if landing = 1 {
@@ -229,7 +226,7 @@ until runmode = 0 {
 		set sepDeltaV to Fuel["Stage 1 DeltaV"]().
 		
 		set landingOffset to vxcl(lzDistImp - body:position, lzDistImp):normalized * posOffset.
-		set landingOffset2 to (vxcl(lzPos:position - body:position, lzPos:position):normalized * (lzDistCur:mag/6)) + landingOffset.
+		set landingOffset2 to (vxcl(lzPos:position - body:position, lzPos:position):normalized * (lzDistCur:mag/10)) + landingOffset.
 		
 		if runmode >= 4 {
 			set velDir to ship:velocity:surface:normalized * 25.
