@@ -68,7 +68,7 @@ libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions
 	local sepDeltaV is 0.
 	
 	// \/ Need renaming \/ //
-	local posOffset is 6000.
+	local posOffset is 5000.
 	local landingOffset is 0.
 	local landingOffset2 is 0.
 	local dirRet is 0.
@@ -313,7 +313,7 @@ until runmode = 0 {
 				rcs on.
 				set eventTime to mT + 2.
 				set runmode to 3.1.
-			} else if sepDeltaV < landingDeltaV(landing) + 50 {
+			} else if sepDeltaV < landingDeltaV(landing) + 25 {
 				Engine["Stop"](list(
 					Merlin1D_1,
 					Merlin1D_2,
@@ -326,7 +326,7 @@ until runmode = 0 {
 				)).
 				Engine["Throttle"](
 				list(
-					list(Merlin1D_0, max(36, min(100, (sepDeltaV - landingDeltaV(landing))*2)))
+					list(Merlin1D_0, max(36, min(100, ((sepDeltaV - landingDeltaV(landing))*6) + 36)))
 				)).
 			}
 		} else {
@@ -407,7 +407,7 @@ until runmode = 0 {
 				if impPosFut:position:mag > lzPos:position:mag {
 					Engine["Throttle"](
 					list(
-						list(Merlin1D_0, max(36, min(100, (lzDistImp:mag - posOffset)/50 )))
+						list(Merlin1D_0, max(36, min(100, ((posOffset - lzDistImp:mag)/60) + 36 )))
 					)).
 				}
 			} else {
@@ -505,7 +505,7 @@ until runmode = 0 {
 	{
 		if altCur <= reentryBurnAlt {
 			set ship:control:fore to 0.
-			set posOffset to 1500.
+			set posOffset to 500.
 			
 			set reorienting to false.
 			set tval to 1.
@@ -533,7 +533,7 @@ until runmode = 0 {
 				set engStartup to false.
 			}
 			
-			if (lzDistImp:mag <= posOffset) {
+			if (lzDistImp:mag <= posOffset) or (sepDeltaV <= 400) {
 				Engine["Stop"](list(
 					Merlin1D_0,
 					Merlin1D_1,
@@ -587,7 +587,7 @@ until runmode = 0 {
 		
 		if tval = 0 {
 			
-			set posOffset to max(-1500, min(1500, lzDistImp:mag)).
+			set posOffset to max(-500, min(500, lzDistImp:mag)).
 			
 			set DescLatitudeChange_PID:setpoint to body:geopositionof(lzPos:position + landingOffset2):lat. // steering
 			set DescLatitude_PID:setpoint to DescLatitudeChange_PID:update(mT, impPosFut:lat).
@@ -611,7 +611,7 @@ until runmode = 0 {
 			
 		}
 		
-		if (VelThr_PID:output < 0.5 or tval = 0) and ship:velocity:surface:mag > 150 {
+		if (VelThr_PID:output < 0.5 or tval = 0) and ship:velocity:surface:mag > 100 {
 			set steerPitch to -steerPitch.
 			set steerYaw to -steerYaw.
 		}
