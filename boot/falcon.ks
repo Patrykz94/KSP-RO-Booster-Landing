@@ -168,7 +168,6 @@ libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions
 	set posPrev to ship:geoposition.
 	set impPosPrev to ship:geoposition.
 	set impPosFut to ship:geoposition.
-	set rotPrev to list(pitch_for(ship), compass_for(ship), roll_for(ship)).
 	
 	if landing <> 0 {
 		if landing = 1 {
@@ -207,7 +206,6 @@ until runmode = 0 {
 		}
 		set posCur to ship:geoposition.
 		set rotCur to list(pitch_for(ship), compass_for(ship), rollConvert()).
-		set rotSpd to list((mod(90 + rotCur[0] - rotPrev[0], 180) -90)/dT, mod(rotCur[1] - rotPrev[1], 360)/dT,(mod(180 + rotCur[2] - rotPrev[2], 360) -180)/dT).
 		set velLatCur to (mod(180 + posPrev:lat - posCur:lat, 360) - 180)/dT.
 		set velLngCur to (mod(180 + posPrev:lng - posCur:lng, 360) - 180)/dT.
 		
@@ -373,7 +371,7 @@ until runmode = 0 {
 	}
 	else if runmode = 4.1
 	{
-		if rotCur[0] < 25 {
+		if rotCur[0] < 30 {
 			set ship:control:neutralize to true.
 			set stable to false.
 			lock steering to steer.
@@ -407,7 +405,7 @@ until runmode = 0 {
 				if impPosFut:position:mag > lzPos:position:mag {
 					Engine["Throttle"](
 					list(
-						list(Merlin1D_0, max(36, min(100, ((posOffset - lzDistImp:mag)/60) + 36 )))
+						list(Merlin1D_0, max(36, min(100, ((posOffset - lzDistImp:mag)/65) + 36 )))
 					)).
 				}
 			} else {
@@ -486,7 +484,10 @@ until runmode = 0 {
 		if rotCur[0] < 60 {
 			set ship:control:neutralize to true.
 			set stable to false.
-			set steeringmanager:maxstoppingtime to 1.
+			set steeringmanager:maxstoppingtime to 3.
+			set steeringmanager:rollts to 5.
+			set steeringmanager:pitchts to 5.
+			set steeringmanager:yawts to 5.
 			lock steering to steer.
 			set steer to -ship:velocity:surface.
 			set engStartup to true.
@@ -582,8 +583,8 @@ until runmode = 0 {
 			list(Merlin1D_2, engThrust)
 		)).
 		
-		set DescLatitudeChange_PID:kp to max(5, min(60, 60-((altCur/1000)*3))).
-		set DescLongitudeChange_PID:kp to max(5, min(60, 60-((altCur/1000)*3))).
+		set DescLatitudeChange_PID:kp to max(5, min(60, 60-((altCur/1000)*4))).
+		set DescLongitudeChange_PID:kp to max(5, min(60, 60-((altCur/1000)*4))).
 		
 		if tval = 0 {
 			
@@ -688,7 +689,6 @@ until runmode = 0 {
 	set pT to mT.
 	set posPrev to posCur.
 	set impPosPrev to impPosFut.
-	set rotPrev to rotCur.
 
 	// ---=== [**END**] [ UPDATING VARIABLES AFTER EVERY ITERATION ] [**END**] ===--- //
 	
