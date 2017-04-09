@@ -3,6 +3,7 @@
 // ---=== [**START**] [ DECLARING VARIABLES ] [**START**] ===--- //
 
 	local KSCLaunchPad is latlng(28.6083859739973, -80.5997467227517).
+	local ASDS_GTO_1 is latlng(28.1322262, -73.4441595).
 	local Waypoint is latlng(28.6183859739973, -80.5997467227517).
 	
 	if volume(1):name = "Falcon9-S2" {
@@ -106,8 +107,7 @@
 	local f9DryMass is 22.9364756622314.
 	local f9tank is ship:partstagged("Falcon9-S1-Tank")[0].
 	
-	function getF9DeltaV {
-		parameter press is ship:sensors:pres * constant:kpatoatm.
+	function getMass {
 		local totalFuelMass is 0.
 		local f9Dry is f9DryMass.
 		local resources is f9tank:resources.
@@ -118,11 +118,17 @@
 				set f9Dry to f9Dry + (resource:density * resource:amount).
 			}
 		}
-		return Merlin1D_0:ispat(press) * 9.80665 * ln((f9Dry + totalFuelMass) / f9Dry).
+		return list(f9Dry, totalFuelMass).
+	}
+	
+	function getF9DeltaV {
+		parameter press is ship:sensors:pres * constant:kpatoatm.
+		return Merlin1D_0:ispat(press) * 9.80665 * ln((getMass[0] + getMass[1]) / getMass[0]).
 	}
 	
 	global Fuel is lexicon(
-		"Stage 1 DeltaV", getF9DeltaV@
+		"Stage 1 DeltaV", getF9DeltaV@,
+		"Mass", getMass@
 	).
 }
 
@@ -147,8 +153,6 @@ function landingBurnTime {
 	parameter dv.
 	parameter ensNo is 1.
 	parameter thrustL is 1.
-	//local dv2 is 50.
-	//local dv1 is max(0, dv - dv2).
 	local ens is list().
 	if ensNo = 1 {
 		set ens to list(Merlin1D_0).
@@ -174,46 +178,36 @@ function landingBurnTime {
 		//notify("No engines available!").
 		return 0.
 	} else {
-		local f1 is ens_thrust * thrustL * 1000.  // engine thrust (kg * m/s²)
-		//local f2 is ens_thrust/ens:length * 0.4 * 1000.  // engine thrust (kg * m/s²)
+		local f is ens_thrust * thrustL * 1000.  // engine thrust (kg * m/s²)
 		local m is ship:mass * 1000.        // starting mass (kg)
 		local e is constant():e.            // base of natural log
 		local p is ens_isp/ens:length.               // engine isp (s) support to average different isp values
 		local g is ship:orbit:body:mu/ship:obt:body:radius^2.    // gravitational acceleration constant (m/s²)
 		
-		//local t2 is g * m * p * (1 - e^(-dv2/(g*p))) / f2.
-		//if dv1 = 0 {
-		//	return list(max(0.001, t2), 0.001, max(0.001, t2)).
-		//} else {
-		//	local t1 is g * m * p * (1 - e^(-dv1/(g*p))) / f1.
-		//	return list(max(0.001, t1+t2), max(0.001, t1), max(0.001, t2)).
-		//}
-		return list(g * m * p * (1 - e^(-dv/(g*p))) / f1).
+		return g * m * p * (1 - e^(-dv/(g*p))) / f.
 	}
 }
 
 function landBurnHeight {
-	if verticalspeed < 0 {
-		local height1 is 0.
-		//local height2 is min(50, ship:velocity:surface:mag)^2 / (2*(min(50, ship:velocity:surface:mag)/landBurnT[2] - gravity())).
-		//if ship:velocity:surface:mag > 50 {
-		set height1 to ship:velocity:surface:mag^2 / (2*(ship:velocity:surface:mag/landBurnT[0] - gravity())).
-		return list(height1).
-		//} else {
-		//	set height1 to 0.
-		//}
-		//return list(max(0.001, height1+height2), max(0.001, height1), max(0.001, height2)).
-	} else {
-		return list(0.001,0.001,0.001).
-	}
+	return (ship:velocity:surface:mag^2 / (2*(ship:velocity:surface:mag/landBurnT - gravity()))).
 }
 
 function landBurnSpeed {
-	//if ship:velocity:surface:mag > 50 {
-	//	return -sqrt((altCur - lzAlt)*(2*(ship:velocity:surface:mag/landBurnT[1] - gravity()))). //Speed 1
-	//} else {
-		return -sqrt((altCur - lzAlt)*(2*(ship:velocity:surface:mag/landBurnT[0] - gravity()))). //Speed 2
-	//}
-	
-	//set landBurnS to -sqrt((altCur - lzAlt)*(2*(ship:velocity:surface:mag/landBurnT - gravity()))).
+	return -sqrt((altCur - lzAlt)*(2*(ship:velocity:surface:mag/landBurnT - gravity()))).
+}
+
+function configureLandingBurn {
+	if sepDeltaV < 450 {
+		set landBurnEngs to 3.
+		set landBurnThr to 0.55.
+	} else if sepDeltaV < 500 {
+		set landBurnEngs to 1.
+		set landBurnThr to 0.9.
+	} else if sepDeltaV < 550 {
+		set landBurnEngs to 1.
+		set landBurnThr to 0.75.
+	} else {
+		set landBurnEngs to 1.
+		set landBurnThr to 0.6.
+	}
 }

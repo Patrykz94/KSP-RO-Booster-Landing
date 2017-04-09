@@ -116,10 +116,10 @@ libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions
 		// ----- Final touch-down loops ----- //
 		// Latitude control
 		local LandLatitudeChange_PID is pidloop(60, 0, 10, -0.05, 0.05).
-		local LandLatitude_PID is pidloop(500, 0, 150, -5, 5).
+		local LandLatitude_PID is pidloop(700, 0, 200, -5, 5).
 		// Longditude control
 		local LandLongitudeChange_PID is pidloop(60, 0, 10, -0.05, 0.05).
-		local LandLongitude_PID is pidloop(500, 0, 150, -5, 5).
+		local LandLongitude_PID is pidloop(700, 0, 200, -5, 5).
 
 	// ---== END PID LOOPS ==--- //
 	
@@ -131,12 +131,14 @@ libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions
 	local sT is 0. // start of program
 	local pT is 0. // previous tick
 	local impT is 0.
-	local landBurnT is list(0.001). // Landing burn time
-	local landBurnH is list(0.001). // Landing burn height
-	local landBurnD is 0. // Landing burn distance
+	local landBurnT is 0. // Landing burn time
+	local landBurnH is 0. // Landing burn height
 	local landBurnS is 0. // Landing burn speed target
+	local landBurnS2 is 0. // Landing burn speed target
 	local landBurnEngs is 1.
+	local landBurnThr is 0.6.
 	local eventTime is 0.
+	local event is false.
 	
 	// MISSION PARAMETERS
 	
@@ -164,7 +166,7 @@ libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions
 
 	set sT to time:seconds.
 	set pT to sT.
-	set lT to sT + 10.
+	set lT to sT + 15.
 	set posPrev to ship:geoposition.
 	set impPosPrev to ship:geoposition.
 	set impPosFut to ship:geoposition.
@@ -239,26 +241,37 @@ until runmode = 0 {
 		}
 		
 		if runmode = 9 {
-			set landBurnT to landingBurnTime(ship:velocity:surface:mag, 1, 0.9).
-			set landBurnH to landBurnHeight().
-			set landBurnD to altCur - lzAlt - landBurnH[0].
-			set landBurnS to landBurnSpeed().
+			set landBurnT to landingBurnTime(ship:velocity:surface:mag, landBurnEngs, landBurnThr).
+			if tval = 0 {
+				set landBurnH to landBurnHeight().
+			}
+			if landBurnEngs = 3 {
+				set landBurnS to landBurnSpeed() + 50.
+			} else {
+				set landBurnS to landBurnSpeed().
+			}
+			set landBurnS2 to ((1/max(0.01, altCur - lzAlt)^0.25 * ((altCur - lzAlt) * 1.5))* -1) -1.
 		}
 	}
 	
 	// Main logic
 	
-	if runmode = 1 // Engine ignition and liftoff
+	if runmode = 1
+	{
+		ag9 on.
+		set runmode to 1.1.
+	}
+	else if runmode = 1.1 // Engine ignition and liftoff
 	{
 		if altCur > 200 {
 			set runmode to 2.
 		} else if mT >= lt-3 {
 			set tval to 1.
 			stage.
-			set runmode to 1.1.
+			set runmode to 1.2.
 		}
 	}
-	else if runmode = 1.1
+	else if runmode = 1.2
 	{
 		if mT >= lt {
 			stage.
@@ -556,7 +569,8 @@ until runmode = 0 {
 		if altCur < 45000
 		{
 			set runmode to 9.
-			when timeToAltitude(landBurnH[0] + lzAlt, altCur) < 3 and altCur - lzAlt < 3500 then {
+			configureLandingBurn().
+			when timeToAltitude(landBurnH + lzAlt, altCur) < 3 and altCur - lzAlt < 6000 then {
 				set tval to 1.
 				if landBurnEngs = 1 {
 					Engine["Start"](list(
@@ -574,13 +588,29 @@ until runmode = 0 {
 	}
 	else if runmode = 9
 	{
-		set VelThr_PID:setpoint to landBurnS.
+		if landBurnEngs = 1 {
+			if landBurnS < landBurnS2 {
+				set event to true.
+			}
+		} else {
+			set event to true.
+		}
+		if ship:velocity:surface:mag < 75 and event = true {
+			set VelThr_PID:setpoint to landBurnS2.
+			Engine["Stop"](list(
+				Merlin1D_1,
+				Merlin1D_2
+			)).
+		} else {
+			set VelThr_PID:setpoint to landBurnS.
+		}
+		
 		set engThrust to (VelThr_PID:update(mT, verticalspeed)*100)/cos(vang(up:vector, ship:facing:forevector)).
 		Engine["Throttle"](
 		list(
 			list(Merlin1D_0, engThrust),
-			list(Merlin1D_1, engThrust),
-			list(Merlin1D_2, engThrust)
+			list(Merlin1D_1, landBurnThr),
+			list(Merlin1D_2, landBurnThr)
 		)).
 		
 		set DescLatitudeChange_PID:kp to max(5, min(60, 60-((altCur/1000)*4))).
@@ -617,12 +647,12 @@ until runmode = 0 {
 			set steerYaw to -steerYaw.
 		}
 		
-		if altCur < lzAlt + 200 or verticalspeed > 0 {
+		if altCur < lzAlt + 20 or verticalspeed > 0 {
 			set steer to up + r(steerPitch, steerYaw, 90).
 		} else {
 			set steer to (-ship:velocity:surface):direction + r(steerPitch, steerYaw, 90).
 		}
-		if ship:status = "Landed" {
+		if verticalspeed >= 0 {
 			set runmode to 0.
 			Engine["Stop"](list(
 				Merlin1D_0,
@@ -677,11 +707,12 @@ until runmode = 0 {
 	print "PID loop KP:               " + round(DescLatitudeChange_PID:kp, 2) + "     " at (3, 38).
 	
 	if runmode = 9 {
-		print "T1ime:                    " + round(landBurnT[0], 5) + "     " at (3, 42).
+		print "T1ime:                    " + round(landBurnT, 5) + "     " at (3, 42).
 		
-		print "Height:                   " + round(landBurnH[0], 5) + "     " at (3, 46).
+		print "Height:                   " + round(landBurnH, 5) + "     " at (3, 46).
 		
 		print "landBurnS:                " + round(landBurnS, 2) + "     " at (3, 48).
+		print "landBurnS2:               " + round(landBurnS2, 2) + "     " at (3, 49).
 	}
 	
 	// ---=== [**START**] [ UPDATING VARIABLES AFTER EVERY ITERATION ] [**START**] ===--- //
