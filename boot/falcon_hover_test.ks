@@ -116,10 +116,10 @@ libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions
 		// ----- Final touch-down loops ----- //
 		// Latitude control
 		local LandLatitudeChange_PID is pidloop(60, 0, 10, -0.05, 0.05).
-		local LandLatitude_PID is pidloop(500, 0, 150, -5, 5).
+		local LandLatitude_PID is pidloop(700, 0, 200, -5, 5).
 		// Longditude control
 		local LandLongitudeChange_PID is pidloop(60, 0, 10, -0.05, 0.05).
-		local LandLongitude_PID is pidloop(500, 0, 150, -5, 5).
+		local LandLongitude_PID is pidloop(700, 0, 200, -5, 5).
 
 	// ---== END PID LOOPS ==--- //
 	
@@ -131,11 +131,12 @@ libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions
 	local sT is 0. // start of program
 	local pT is 0. // previous tick
 	local impT is 0.
-	local landBurnT is list(0.001). // Landing burn time
-	local landBurnH is list(0.001). // Landing burn height
-	local landBurnD is 0. // Landing burn distance
+	local landBurnT is 0. // Landing burn time
+	local landBurnH is 0. // Landing burn height
 	local landBurnS is 0. // Landing burn speed target
+	local landBurnS2 is 0. // Landing burn speed target
 	local landBurnEngs is 1.
+	local landBurnThr is 0.6.
 	local eventTime is 0.
 	local event is false.
 	
@@ -167,7 +168,7 @@ libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions
 
 	set sT to time:seconds.
 	set pT to sT.
-	set lT to sT + 10.
+	set lT to sT + 15.
 	set posPrev to ship:geoposition.
 	set impPosPrev to ship:geoposition.
 	set impPosFut to ship:geoposition.
@@ -192,6 +193,10 @@ libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions
 	//createLog().
 
 // ---=== [**END**] [ GETTING NECESSARY DATA ] [**END**] ===---
+
+log " " to "0:/logs/grasshopper.csv".
+deletepath("0:/logs/grasshopper.csv").
+log "Delta Time,Altitude,Speed,Landing Speed 1,Landing Speed 2," to "0:/logs/grasshopper.csv".
 
 wait 0. // waiting 1 physics tick so that everything updates
 
@@ -247,16 +252,36 @@ until runmode = 0 {
 		}
 		
 		if runmode = 9 {
-			set landBurnT to landingBurnTime(ship:velocity:surface:mag, 1, 0.8).//max(0.1,mnv_time(ship:velocity:surface:mag, list(Merlin1D_0))) * 1.2.
-			set landBurnH to landBurnHeight().//verticalspeed^2 / (2*(ship:velocity:surface:mag/landBurnT - gravity())).
-			set landBurnD to altCur - lzAlt - landBurnH[0].//altCur - lzAlt - landBurnH.
-			set landBurnS to landBurnSpeed().//-sqrt((altCur - lzAlt)*(2*(ship:velocity:surface:mag/landBurnT - gravity()))).
+			set landBurnT to landingBurnTime(ship:velocity:surface:mag, landBurnEngs, landBurnThr).
+			if tval = 0 {
+				set landBurnH to landBurnHeight().
+			}
+			if landBurnEngs = 3 {
+				set landBurnS to landBurnSpeed() + 50.
+			} else {
+				set landBurnS to landBurnSpeed().
+			}
+			set landBurnS2 to ((1/max(0.01, altCur - lzAlt)^0.25 * ((altCur - lzAlt) * 1.5))* -1) -1.
 		}
 	}
 	
 	// Main logic
 	
-	if runmode = 1 {
+	if runmode = 1 // Engine ignition and liftoff
+	{
+		ag9 on.
+		set runmode to 1.1.
+	}
+	else if runmode = 1.1
+	{
+		if altCur > 200 {
+			set runmode to 2.
+		} else if mT >= lt-3 {
+			set runmode to 1.2.
+		}
+	}
+	else if runmode = 1.2
+	{
 		set steer to up.
 		set tval to 0.
 		stage.
@@ -278,7 +303,9 @@ until runmode = 0 {
 		set eventTime to mT.
 		set runmode to 2.
 		set AltVel_PID:setpoint to 15000.
-	} else if runmode = 2 {
+	}
+	else if runmode = 2
+	{
 		set VelThr_PID:setpoint to AltVel_PID:update(mt, altCur).
 		
 		Engine["Throttle"](
@@ -286,14 +313,15 @@ until runmode = 0 {
 			list(Merlin1D_0, (VelThr_PID:update(mT, verticalspeed)*100)/cos(vang(up:vector, ship:facing:forevector)))
 		)).
 		set steer to up.// + r(steerPitch, steerYaw, 90).
-		if sepDeltaV < 600 {
+		if sepDeltaV < 400 {
 			set AltVel_PID:setpoint to lzAlt.
 			set tval to 0.
 			Engine["Stop"](list(
 				Merlin1D_0
 			)).
+			configureLandingBurn().
 			if verticalspeed < -50 {
-				when timeToAltitude(landBurnH[0] + lzAlt, altCur) < 3 and altCur - lzAlt < 6000 then {
+				when timeToAltitude(landBurnH + lzAlt, altCur) < 3 and altCur - lzAlt < 6000 then {
 					set tval to 1.
 					if landBurnEngs = 1 {
 						Engine["Start"](list(
@@ -314,23 +342,33 @@ until runmode = 0 {
 	}
 	else if runmode = 9
 	{
-		set VelThr_PID:setpoint to landBurnS.
-		//if landBurnH[1] = 0 {
+		if landBurnEngs = 1 {
+			if landBurnS < landBurnS2 {
+				set event to true.
+			}
+		} else {
+			set event to true.
+		}
+		if ship:velocity:surface:mag < 75 and event = true {
+			set VelThr_PID:setpoint to landBurnS2.
 			Engine["Stop"](list(
 				Merlin1D_1,
 				Merlin1D_2
 			)).
-		//}
+		} else {
+			set VelThr_PID:setpoint to landBurnS.
+		}
+		
 		set engThrust to (VelThr_PID:update(mT, verticalspeed)*100)/cos(vang(up:vector, ship:facing:forevector)).
 		Engine["Throttle"](
 		list(
 			list(Merlin1D_0, engThrust),
-			list(Merlin1D_1, engThrust),
-			list(Merlin1D_2, engThrust)
+			list(Merlin1D_1, landBurnThr),
+			list(Merlin1D_2, landBurnThr)
 		)).
 		
-		set DescLatitudeChange_PID:kp to max(5, min(60, 60-((altCur/1000)*4))).
-		set DescLongitudeChange_PID:kp to max(5, min(60, 60-((altCur/1000)*4))).
+		set DescLatitudeChange_PID:kp to max(1, min(60, 60-((altCur/1000)*4))).
+		set DescLongitudeChange_PID:kp to max(1, min(60, 60-((altCur/1000)*4))).
 		
 		if tval = 0 {
 			
@@ -363,12 +401,13 @@ until runmode = 0 {
 			set steerYaw to -steerYaw.
 		}
 		
-		if altCur < lzAlt + 200 or verticalspeed > 0 {
+		if altCur < lzAlt + 20 or verticalspeed > 0 {
 			set steer to up + r(steerPitch, steerYaw, 90).
 		} else {
 			set steer to (-ship:velocity:surface):direction + r(steerPitch, steerYaw, 90).
 		}
-		if ship:status = "Landed" {
+		
+		if verticalspeed >= 0 {
 			set runmode to 0.
 			Engine["Stop"](list(
 				Merlin1D_0,
@@ -427,13 +466,15 @@ until runmode = 0 {
 	if runmode = 9 {
 		//print "T1:                        " + round(landBurnT[1], 5) + "     " at (3, 40).
 		//print "T2:                        " + round(landBurnT[2], 5) + "     " at (3, 41).
-		print "T1 + T2:                   " + round(landBurnT[0], 5) + "     " at (3, 42).
+		print "Time:                      " + round(landBurnT, 5) + "     " at (3, 42).
 		
 		//print "Height 1:                  " + round(landBurnH[1], 5) + "     " at (3, 44).
 		//print "Height 2:                  " + round(landBurnH[2], 5) + "     " at (3, 45).
-		print "Height 1 + Height 2:       " + round(landBurnH[0], 5) + "     " at (3, 46).
+		print "landBurnS                  " + round(landBurnS, 2) + "     " at (3, 46).
 		
-		print "landBurnS                  " + round(landBurnS, 2) + "     " at (3, 48).
+		print "landBurnS2                 " + round(landBurnS2, 2) + "     " at (3, 48).
+		
+		log dt + "," + (altCur-lzAlt) + "," + verticalspeed + "," + landBurnS + "," + landBurnS2 + "," to "0:/logs/grasshopper.csv".
 	}
 	
 	// ---=== [**START**] [ UPDATING VARIABLES AFTER EVERY ITERATION ] [**START**] ===--- //
