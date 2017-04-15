@@ -226,7 +226,7 @@ until runmode = 0 {
 		set sepDeltaV to Fuel["Stage 1 DeltaV"]().
 		
 		set landingOffset to vxcl(lzDistImp - body:position, lzDistImp):normalized * posOffset.
-		set landingOffset2 to (vxcl(lzPos:position - body:position, lzPos:position):normalized * (lzDistCur:mag/10)) + landingOffset.
+		set landingOffset2 to (vxcl(lzPos:position - body:position, lzPos:position):normalized * min(200,lzDistCur:mag/4)) + landingOffset.
 		
 		if runmode >= 4 {
 			set velDir to ship:velocity:surface:normalized * 25.
@@ -582,6 +582,8 @@ until runmode = 0 {
 						Merlin1D_1,
 						Merlin1D_2
 					)).
+					set Merlin1D_1:gimbal:lock to true.
+					set Merlin1D_2:gimbal:lock to true.
 				}
 			}
 		}
@@ -618,7 +620,7 @@ until runmode = 0 {
 		
 		if tval = 0 {
 			
-			set posOffset to max(-500, min(500, lzDistImp:mag)).
+			set posOffset to max(-500, min(500, lzDistImp:mag/2)).
 			
 			set DescLatitudeChange_PID:setpoint to body:geopositionof(lzPos:position + landingOffset2):lat. // steering
 			set DescLatitude_PID:setpoint to DescLatitudeChange_PID:update(mT, impPosFut:lat).
@@ -642,16 +644,17 @@ until runmode = 0 {
 			
 		}
 		
-		if (VelThr_PID:output < 0.5 or tval = 0) and ship:velocity:surface:mag > 100 {
+		if shipCurrentTWR() < 1.6 and ship:velocity:surface:mag > 120 {
 			set steerPitch to -steerPitch.
 			set steerYaw to -steerYaw.
 		}
 		
 		if altCur < lzAlt + 20 or verticalspeed > 0 {
-			set steer to up + r(steerPitch, steerYaw, 90).
+			set steer to up + r(0, 0, 90).
 		} else {
 			set steer to (-ship:velocity:surface):direction + r(steerPitch, steerYaw, 90).
 		}
+		
 		if verticalspeed >= 0 {
 			set runmode to 0.
 			Engine["Stop"](list(
@@ -688,10 +691,13 @@ until runmode = 0 {
 		print "Impact Position:           " + round(impPosFut:lng, 3) + ", " + round(impPosFut:lat, 3) + "             " at (3,21).
 		
 		print "Impact Time:               " + round(impT, 2) + "     " at (3, 23).
-		//print "Suicide Burn Time:         " + round(landBurnT, 2) + "     " at (3, 24).
 		print "Impact Distance:           " + round(lzDistImp:mag, 2) + "          " at (3, 25).
 		
+		if runmode >= 9 {
+		print "Position offset:           " + round(landingOffset2:mag, 2) + "           " at (3, 27).
+		} else {
 		print "Position offset:           " + round(posOffset, 2) + "           " at (3, 27).
+		}
 		print "Distance to LZ:            " + round(lzDistCur:mag, 2) + "           " at (3, 28).
 		
 		print "Steer Latitude:            " + round(steerPitch, 2) + "     " at (3, 30).

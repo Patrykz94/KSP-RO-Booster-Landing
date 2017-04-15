@@ -140,9 +140,9 @@ function landingDeltaV { // Calculating the deltaV required at separation
 		if landing <= 10 {
 			set delv to (groundspeed * 1.4) + 800 + 400.
 		} else if landing <= 20 {
-			set delv to (groundspeed * 0.75) + 800 + 400.
+			set delv to (groundspeed * 0.75) + 800 + 500.
 		} else {
-			set delv to (groundspeed * 0.4) + 300.
+			set delv to (groundspeed * 0.4) + 350.
 		}
 	}
 	
@@ -161,12 +161,14 @@ function landingBurnTime {
 	}
 	local ens_thrust is 0.
 	local ens_isp is 0.
+	local press is ship:sensors:pres * constant:kpatoatm.
 
 	for en in ens {
+		local cIsp is en:ispat(press).
 		if en:isp = 0 or en:maxthrust = 0 {
 			if merlinData[0] = true {
-				set ens_thrust to ens_thrust + merlinData[1].
-				set ens_isp to ens_isp + merlinData[3].
+				set ens_thrust to ens_thrust + (merlinData[2] / merlinData[4]* cIsp).
+				set ens_isp to ens_isp + cIsp.
 			}
 		} else {
 			set ens_thrust to ens_thrust + en:maxthrust.
