@@ -187,6 +187,7 @@ local lzPos is 0.
 local lzPosFut is 0.
 local lzAlt is 0.
 local reentryBurnDeltaV is 0.
+local reentryBurnThr is 0.4.
 
 // Pattern tracking
 local newValue is 0.
@@ -348,6 +349,14 @@ if landing["landing"] { // If landing is required then proceed with the program 
 						Merlin1D_1,
 						Merlin1D_2
 					)).
+					set Merlin1D_1:gimbal:lock to true.
+					set Merlin1D_2:gimbal:lock to true.
+					set Merlin1D_3:gimbal:lock to true.
+					set Merlin1D_4:gimbal:lock to true.
+					set Merlin1D_5:gimbal:lock to true.
+					set Merlin1D_6:gimbal:lock to true.
+					set Merlin1D_7:gimbal:lock to true.
+					set Merlin1D_8:gimbal:lock to true.
 					Engine["Throttle"](list(
 						list(Merlin1D_0, max(36, min(100, landingOffsetFlat:mag/(lzOffsetDist*0.03) )))
 					)).
@@ -411,7 +420,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 		else if runmode = 6 // Reorienting for reentry
 		{
 			rcs on.
-			stabilize().
+			stabilize(180).
 			set eventTime to mT + 3.
 			set runmode to 6.1.
 			set clearRequired to true.
@@ -420,7 +429,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 		{
 			if mT > eventTime {
 				if stable = false {
-					if stabilize() = true {
+					if stabilize(180) = true {
 						set stable to true.
 					}
 				} else {
@@ -431,7 +440,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 					set runmode to 6.2.
 				}
 			} else {
-				stabilize().
+				stabilize(180).
 			}
 		}
 		else if runmode = 6.2
@@ -449,7 +458,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 				set runmode to 7.
 			} else {
 				if stable = false {
-					if stabilize() = true {
+					if stabilize(180) = true {
 						set stable to true.
 					}
 				} else {
@@ -469,9 +478,9 @@ if landing["landing"] { // If landing is required then proceed with the program 
 				
 				if lzDistImp:mag > (lzOffsetDist * 1.1) {
 					Engine["Throttle"](list(
-						list(Merlin1D_0, 75),
-						list(Merlin1D_1, 75),
-						list(Merlin1D_2, 75)
+						list(Merlin1D_0, reentryBurnThr),
+						list(Merlin1D_1, reentryBurnThr),
+						list(Merlin1D_2, reentryBurnThr)
 					)).
 				} else {
 					Engine["Throttle"](list(
@@ -521,8 +530,6 @@ if landing["landing"] { // If landing is required then proceed with the program 
 							Merlin1D_1,
 							Merlin1D_2
 						)).
-						set Merlin1D_1:gimbal:lock to true.
-						set Merlin1D_2:gimbal:lock to true.
 					}
 				}
 			}

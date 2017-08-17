@@ -64,6 +64,7 @@ function killPit {
 }
 
 function stabilize {
+	parameter pos is 0.
 	set ship:control:neutralize to true.
 	if roll_for(ship) > 1 or roll_for(ship) < -1 {
 		moveRoll(0).
@@ -94,7 +95,7 @@ function startFlip {
 function startFlip2 {
 	parameter flipSpeed is 1.
 	set ship:control:neutralize to true.
-	moveRoll(0, 0.2).
+	moveRoll(180, 0.2).
 	killYaw(0.1).
 	set Pitch_PID:setpoint to flipSpeed.
 	if (-ship:angularmomentum:x/150) < flipSpeed * 0.8 or (-ship:angularmomentum:x/150) > flipSpeed * 1.2 {
