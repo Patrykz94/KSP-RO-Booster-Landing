@@ -36,38 +36,27 @@ function libDl {
 libDl(libList).
 
 // ---=== [**START**] [ DECLARING ALL NECESSARY VARIABLES ] [**START**] ===---
-	
-	rcs off.
-	sas off.
-	
+
 	wait until ag10.
 
-	// default launch parameters can be changed while starting the program.
-	// You can do it by typing "run boot_testflight(250,90,1)."
-
-	parameter orbAlt is 200. // Default target altitude
-	parameter orbDir is 90.  // Default launch direction (landing only works on launching to 90 degrees)
-	parameter landing is 1.  // Landing site
-	set orbAlt to orbAlt * 1000.
-
-	// NAVIGATION AND ROCKET SYSTEMS VAIRABLES
+	// Navigation and rocket systems
 
 	local compass is 0.
 	local pitch is 90.
 	
-	local runmode is 1.
+	local runmode is -1.
 	local cpuName is core:tag.
 	local reorienting is false.
 
-	// SHIP POSITIONING AND VELOCITY TRACKING VARIABLES
+	// Ship positioning and velocity tracking
 
 	local posCur is 0.
-	local posPrev is 0.
+	local posPrev is ship:geoposition.
 	local altCur is 0.
-	
+
 	local impPosCur is 0.
-	local impPosPrev is 0.
-	local impPosFut is 0. // may be redundant
+	local impPosPrev is ship:geoposition.
+	local impPosFut is ship:geoposition. // may be redundant
 	local impDist is 0.
 	local lzDistCur is 0.
 	local lzDistImp is 0.
@@ -81,7 +70,7 @@ libDl(libList).
 	
 	local sepDeltaV is 0.
 	
-	// \/ Need renaming \/ //
+	// Offsets
 	local posOffset is 5000.
 	local landingOffset is 0.
 	local landingOffset2 is 0.
@@ -89,7 +78,7 @@ libDl(libList).
 	local dirVecOffset is 0.
 	local desiredDir is 0.
 
-	// STEERING VARIABLES
+	// Steering variables
 
 	local tval is 0.
 	local stable is false.
@@ -114,78 +103,66 @@ libDl(libList).
 	local engThrust is 0.
 		
 	// ---== PREPARING PID LOOPS ==--- //
-		// ----- Landing loops ----- //		
-		// Landing velocity control
-		local AltVel_PID is pidloop(0.2, 0, 0.15, -600, 0.1).
-		local VelThr_PID is pidloop(2.1, 9, 0.15, 0.36, 1).
-		
-		// ----- Controlled descent loops ----- //
-		// Latitude control
-		local DescLatitudeChange_PID is pidloop(20, 0, 5, -0.1, 0.1).
-		local DescLatitude_PID is pidloop(300, 1, 150, -10, 10).
-		// Longditude control
-		local DescLongitudeChange_PID is pidloop(20, 0, 5, -0.1, 0.1).
-		local DescLongitude_PID is pidloop(300, 1, 150, -10, 10).
+	
+	// Throttle control
+	local AltVel_PID is pidloop(0.2, 0, 0.15, -600, 0.1).
+	local VelThr_PID is pidloop(2.1, 9, 0.15, 0.36, 1).
 
-		// ----- Final touch-down loops ----- //
-		// Latitude control
-		local LandLatitudeChange_PID is pidloop(60, 0, 10, -0.05, 0.05).
-		local LandLatitude_PID is pidloop(700, 0, 200, -5, 5).
-		// Longditude control
-		local LandLongitudeChange_PID is pidloop(60, 0, 10, -0.05, 0.05).
-		local LandLongitude_PID is pidloop(700, 0, 200, -5, 5).
+	// Aerodynamic steering loops
+	local DescLatitudeChange_PID is pidloop(20, 0, 5, -0.1, 0.1).
+	local DescLatitude_PID is pidloop(300, 1, 150, -10, 10).
+
+	local DescLongitudeChange_PID is pidloop(20, 0, 5, -0.1, 0.1).
+	local DescLongitude_PID is pidloop(300, 1, 150, -10, 10).
+
+	// Powered steering loops
+	local LandLatitudeChange_PID is pidloop(60, 0, 10, -0.05, 0.05).
+	local LandLatitude_PID is pidloop(700, 0, 200, -5, 5).
+
+	local LandLongitudeChange_PID is pidloop(60, 0, 10, -0.05, 0.05).
+	local LandLongitude_PID is pidloop(700, 0, 200, -5, 5).
 
 	// ---== END PID LOOPS ==--- //
 	
-	// TIME TRACKING VARIABLES
-
-	local dT is 0. // delta
-	local mT is 0. // mission/current
-	local lT is 0. // until/since launch
-	local sT is 0. // start of program
-	local pT is 0. // previous tick
+	// Time tracking
+	local sT is time:seconds. // Start of program time
+	local dT is 0. // Delta time
+	local mT is 0. // Mission elapsed time
+	local lT is sT + 15. // Until/since launch
+	local pT is sT. // Previous tick time
 	local impT is 0.
 	local landBurnT is 0. // Landing burn time
 	local landBurnH is 0. // Landing burn height
 	local landBurnS is 0. // Landing burn speed target
-	local landBurnS2 is 0. // Landing burn speed target
-	local landBurnEngs is 1.
+	local landBurnS2 is 0. // Landing burn speed target (touchdown)
+	local landBurnEngs is 1. // Number of ladning engines
 	local landBurnThr is 0.6.
 	local eventTime is 0.
 	local event is false.
-	
-	// MISSION PARAMETERS
-	
-	local lzPos is 0.
-	local lzPosFut is 0.
-	local lzAlt is 0.
-	local reentryBurnAlt is 55000.
 
-	// OTHER VARIABLES
-
-	local clearRequired is false.
-	
+	// Vectors to be displayed
 	local vec1 is 0.
 	local vec2 is 0.
 	local vec3 is 0.
-	
+
+	// Other variables
+	local clearRequired is false.
 	local bodyRotation is 360 / body:rotationperiod.
 	local tr is addons:tr.
-	
+
+	// Landing parameters
+	local lzPos is 0.
+	local lzPosFut is 0.
+	local lzAlt is 0.
+	local reentryBurnDeltaV is 0.
+
 // ---=== [**END**] [ DECLARING ALL NECESSARY VARIABLES ] [**END**] ===---
 
 // ---=== [**START**] [ GETTING NECESSARY DATA ] [**START**] ===---
 
-// final preparation - setting up for launch
+// Final preparation
 
-	set sT to time:seconds.
-	set pT to sT.
-	set lT to sT + 15.
-	set posPrev to ship:geoposition.
-	set impPosPrev to ship:geoposition.
-	set impPosFut to ship:geoposition.
-	
-	if landing <> 0 {
+	if landing <> 0 { // Temporary, plannign to load a landing config file with this data
 		if landing = 1 {
 			set lzPos to KSCLaunchPad.
 			tr:settarget(KSCLaunchPad).
@@ -193,14 +170,10 @@ libDl(libList).
 		
 		set lzAlt to lzPos:terrainheight.
 		when (altCur - lzAlt) < 200 and runmode > 2 then { gear on. }
-	} else {
-		set lzAlt to 0.
 	}
 	
 	lock throttle to max(0, min(1, tval)).
 	lock steering to steer.
-	
-	//createLog().
 
 // ---=== [**END**] [ GETTING NECESSARY DATA ] [**END**] ===---
 
@@ -531,7 +504,7 @@ until runmode = 0 {
 	}
 	else if runmode = 7 // Reentry burn
 	{
-		if altCur <= reentryBurnAlt {
+		if altCur <= 55000 { // ------====<<<< Need to change logic to aero drag force or dynamic pressure
 			set ship:control:fore to 0.
 			set posOffset to 500.
 			
