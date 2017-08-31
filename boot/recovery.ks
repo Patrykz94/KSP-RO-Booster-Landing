@@ -1,13 +1,27 @@
+// Initialising the script
 @lazyglobal off.
 clearscreen.
 set ship:control:pilotmainthrottle to 0.
 wait 0.
 
+// Setting up storage path and creating necessary directories
 local storagePath is "1:".
 if not exists(storagePath + "/libs") {
 	createdir(storagePath + "/libs").
 }
 
+// List of libraries needed for the program to run
+local libList is list( // Add .ks files to the list to be loaded (without extensions)
+	"lib_navball",
+	"telemetry",
+	"flight_display",
+	"maneuvers",
+	"functions",
+	"falcon_functions",
+	"falcon_rcs"
+).
+
+// Loading required libraries
 function libDl {
 	parameter libs is list().
 	
@@ -19,10 +33,10 @@ function libDl {
 	}
 }
 
-libDl(list("lib_navball", "telemetry", "flight_display", "maneuvers", "functions", "falcon_functions", "falcon_rcs")).
+libDl(libList).
 
 // ---=== [**START**] [ DECLARING ALL NECESSARY VARIABLES ] [**START**] ===---
-
+	
 	rcs off.
 	sas off.
 	
