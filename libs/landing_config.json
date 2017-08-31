@@ -1,0 +1,15 @@
+{
+"landing_data": {
+	"landing": true,
+	"landing_location": "KSCLaunchPad",
+	"boostback": true,
+	"engines": 3,
+	"throttle": 0.55,
+	"list_of_locations": [
+		{"name": "KSCLaunchPad", "lat": 28.6083859739973, "lng": -80.5997467227517},
+		{"name": "ASDS_GTO_1", "lat": 28.1322262, "lng": -73.4441595}
+	]}//,
+//"vehicle_data": {
+//	""
+//	}
+}
