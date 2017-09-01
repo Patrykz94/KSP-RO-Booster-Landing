@@ -4,36 +4,68 @@ clearscreen.
 set ship:control:pilotmainthrottle to 0.
 wait 0.
 
+// The below will make it possible to exit the program if errors occur
+local once is false.
+until once { // This loop will only work once and breaking it will end the program
+set once to true.
+function errorExit {
+	parameter msg is "ERROR: AN ERROR HAS OCCURED".
+	clearscreen.
+	print msg at(3, 5).
+	break.
+}
+
 // Setting up storage path and creating necessary directories
-local storagePath is "1:".
-if not exists(storagePath + "/libs") {
-	createdir(storagePath + "/libs").
-}
-
-// List of libraries needed for the program to run
-local libList is list( // Add .ks files to the list to be loaded (without extensions)
-	"lib_navball",
-	"telemetry",
-	"flight_display",
-	"maneuvers",
-	"functions",
-	"falcon_functions",
-	"falcon_rcs"
-).
-
-// Loading required libraries
-function libDl {
-	parameter libs is list().
-	
-	for lib in libs {
-		copypath("0:/libs/" + lib + ".ks", storagePath + "/libs/").
+local libsDir is "1:/libs/".
+local configDir is "1:/config/".
+if not exists(libsDir) and not exists(configDir) {
+	if not exists(libsDir) {
+		createdir(libsDir).
 	}
-	for lib in libs {
-		runpath(storagePath + "/libs/" + lib + ".ks").
+	if not exists(configDir) {
+		createdir(configDir).
+	}
+
+	// List of libraries needed for the program to run
+	local libList is list( // Add .ks files to the list to be loaded (without extensions)
+		"lib_navball",
+		"telemetry",
+		"flight_display",
+		"maneuvers",
+		"functions",
+		"falcon_functions",
+		"falcon_rcs"
+	).
+
+	// Loading required libraries
+	function libDl {
+		parameter libs is list().
+		local error is false.
+		
+		for lib in libs {
+			if not exists("0:/libs/" + lib + ".ks") {
+				set error to true.
+			}
+		}
+		if error {
+			errorExit("ERROR: A LIBRARY IS NOT AVAILBLE").
+		}
+		for lib in libs {
+			copypath("0:/libs/" + lib + ".ks", libsDir).
+		}
+		for lib in libs {
+			runpath(libsDir + lib + ".ks").
+		}
+	}
+
+	libDl(libList).
+
+	if exists("0:/config/landing_config.json") {
+		copypath("0:/config/landing_config.json", configDir).
+	} else {
+		errorExit("ERROR: A CONFIG FILE IS NOT AVAILBLE").
 	}
 }
-
-libDl(libList).
 
 // ---=== [**START**] [ DECLARING ALL NECESSARY VARIABLES ] [**START**] ===---
 
@@ -151,6 +183,7 @@ local bodyRotation is 360 / body:rotationperiod.
 local tr is addons:tr.
 
 // Landing parameters
+local landing is readjson(configDir + "landing_config.json").
 local lzPos is 0.
 local lzPosFut is 0.
 local lzAlt is 0.
@@ -160,23 +193,27 @@ local reentryBurnDeltaV is 0.
 
 // ---=== [**START**] [ GETTING NECESSARY DATA ] [**START**] ===---
 
-// Final preparation
-
-if landing <> 0 { // Temporary, plannign to load a landing config file with this data
-	if landing = 1 {
-		set lzPos to KSCLaunchPad.
-		tr:settarget(KSCLaunchPad).
+if landing["landing"] { // Getting landing data
+	local locations is landing["list_of_locations"].
+	for loc in locations {
+		if loc["name"] = landing["landing_location"] {
+			set lzPos to latlng(loc["lat"], loc["lng"]).
+			break.
+		}
 	}
-	
+	if lzPos = 0 {
+		errorExit("ERROR: LANDING REQUIRED BUT NO LOCATION SELECTED").
+	}
+	tr:settarget(lzPos). // Setting target for Trajectories mod
 	set lzAlt to lzPos:terrainheight.
-	when (altCur - lzAlt) < 200 and runmode > 2 then { gear on. }
+	when (altCur - lzAlt) < 200 and runmode > 2 then { gear on. } // Setting trigger for landing legs
 }
 
 // ---=== [**END**] [ GETTING NECESSARY DATA ] [**END**] ===---
 
-wait 0. // waiting 1 physics tick so that everything updates
+wait 0. // Waiting 1 physics tick so that everything updates
 
-if landing <> 0 { // If there is a landing position then proceed with the program
+if landing["landing"] { // If landing is required then proceed with the program otherwise end
 
 	until runmode = 0 {
 		
@@ -243,15 +280,19 @@ if landing <> 0 { // If there is a landing position then proceed with the progra
 		
 		if runmode = 1 // Wait until separation
 		{
-			// Separation logic
+			// {Separation logic here}
 			// if separated {
 			wait 0.
 			lock throttle to max(0, min(1, tval)).
 			lock steering to steer.
-			set runmode to 2.
+			if landing["boostback"] {
+				set runmode to 2.
+			} else {
+				set runmode to 3.
+			}
 			// }
 		}
-		else if runmode = 2 // Decide whether boostback burn is needed - might be in the config
+		else if runmode = 2
 		{
 			
 		}
@@ -639,3 +680,4 @@ if landing <> 0 { // If there is a landing position then proceed with the progra
 }
 
 unlock all.
+}
