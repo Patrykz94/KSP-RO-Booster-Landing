@@ -8,6 +8,7 @@ wait 0.
 local once is false.
 until once { // This loop will only work once and breaking it will end the program
 set once to true.
+
 function errorExit {
 	parameter msg is "ERROR: AN ERROR HAS OCCURED".
 	clearscreen.
@@ -97,8 +98,6 @@ local velLatCur is 0.
 local velLngCur is 0.
 local velLatImp is 0.
 local velLngImp is 0.
-local velDir is 0. // surface prograde
-local velDirFlat is 0. // horizontal direction
 
 local sepDeltaV is 0.
 
@@ -106,9 +105,6 @@ local sepDeltaV is 0.
 local posOffset is 5000.
 local landingOffset is 0.
 local landingOffset2 is 0.
-local dirRet is 0.
-local dirVecOffset is 0.
-local desiredDir is 0.
 
 // Steering variables
 
@@ -194,8 +190,7 @@ local reentryBurnDeltaV is 0.
 // ---=== [**START**] [ GETTING NECESSARY DATA ] [**START**] ===---
 
 if landing["landing"] { // Getting landing data
-	local locations is landing["list_of_locations"].
-	for loc in locations {
+	for loc in landing["list_of_locations"] {
 		if loc["name"] = landing["landing_location"] {
 			set lzPos to latlng(loc["lat"], loc["lng"]).
 			break.
@@ -211,12 +206,11 @@ if landing["landing"] { // Getting landing data
 
 // ---=== [**END**] [ GETTING NECESSARY DATA ] [**END**] ===---
 
-wait 0. // Waiting 1 physics tick so that everything updates
-
 if landing["landing"] { // If landing is required then proceed with the program otherwise end
+	
+	wait 0. // Waiting 1 physics tick so that everything updates
 
 	until runmode = 0 {
-		
 	// ---=== [**START**] [ UPDATING VARIABLES BEFORE EVERY ITERATION ] [**START**] ===--- //
 		
 		set mT to time:seconds.
@@ -241,26 +235,14 @@ if landing["landing"] { // If landing is required then proceed with the program 
 			set impPosFut to tr:impactpos.
 		}
 		set velLatImp to (mod(180 + impPosPrev:lat - impPosFut:lat, 360) - 180)/dT. // TODO: convert these velocity values to vectors
-		set velLngImp to (mod(180 + impPosPrev:lng - impPosFut:lng, 360) - 180)/dT.
+		set velLngImp to (mod(180 + impPosPrev:lng - impPosFut:lng, 360) - 180)/dT. // Will need to recalculate PID gains for this
 		
-		set lzDistCur to lzPos:position - ship:geoposition:altitudeposition(lzAlt).
-		set lzDistImp to lzPos:position - impPosFut:position.
+		set lzDistCur to lzPos:position - ship:geoposition:altitudeposition(lzAlt). // Vector from ship to LZ
+		set lzDistImp to lzPos:position - impPosFut:position. // Vector from impact point to LZ
 		set sepDeltaV to Fuel["Stage 1 DeltaV"]().
 		
-		set landingOffset to vxcl(lzDistImp - body:position, lzDistImp):normalized * posOffset.
-		set landingOffset2 to (vxcl(lzPos:position - body:position, lzPos:position):normalized * min(200,lzDistCur:mag/4)) + landingOffset.
-		
-		if runmode >= 4 {
-			set velDir to ship:velocity:surface:normalized * 25.
-			set velDirFlat to vxcl(ship:velocity:surface - body:position, ship:velocity:surface):normalized * 25.
-			if runmode < 7 {
-				set desiredDir to (vxcl((velDir - (velDir - (landingOffset:normalized * 25))*2) - body:position, (velDir - (velDir - (landingOffset:normalized * 25))*2)):normalized * 25) - (body:position:normalized * 1).
-			} else {
-				set dirRet to (velDirFlat - (landingOffset:normalized * 25)*2):normalized * 25.
-				set dirVecOffset to dirRet - velDirFlat.
-				set desiredDir to (-dirVecOffset - velDir):normalized * 25.
-			}
-		}
+		set landingOffset to vxcl(lzDistImp - body:position, lzDistImp):normalized * posOffset. // Flattened and sized <lzDistImp>
+		set landingOffset2 to (vxcl(lzPos:position - body:position, lzPos:position):normalized * min(200,lzDistCur:mag/4)) + landingOffset. // Adjusted <landingOffset> to change depending on ship position
 		
 		if runmode = 9 {
 			set landBurnT to landingBurnTime(ship:velocity:surface:mag, landBurnEngs, landBurnThr).
@@ -284,7 +266,9 @@ if landing["landing"] { // If landing is required then proceed with the program 
 			// if separated {
 			wait 0.
 			lock throttle to max(0, min(1, tval)).
-			lock steering to steer.
+			unlock steering.
+			set eventTime to mT + 2.
+			set clearRequired to true.
 			if landing["boostback"] {
 				set runmode to 2.
 			} else {
@@ -292,23 +276,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 			}
 			// }
 		}
-		else if runmode = 2
-		{
-			
-		}
-		else if runmode = 3.1 // Booster reorienting.
-		{
-			if mT > eventTime {
-				log " " to "Falcon9S2:/separated.ks".
-				stage.
-				set eventTime to mT + 2.
-				set clearRequired to true.
-				set runmode to 4.
-			} else {
-				stabilize().
-			}
-		}
-		else if runmode = 4 // Booster reorienting.
+		else if runmode = 2 // Reorienting for boostback burn [optional]
 		{
 			if mT > eventTime {
 				if stable = false {
@@ -316,24 +284,24 @@ if landing["landing"] { // If landing is required then proceed with the program 
 						set stable to true.
 					}
 				} else {
-					startFlip(12).
+					startFlip(16).
 				}
 				if rotCur[0] > 75 {
-					set runmode to 4.1.
+					set runmode to 2.1.
 				}
 			} else {
 				stabilize().
 			}
 		}
-		else if runmode = 4.1
+		else if runmode = 2.1
 		{
-			if rotCur[0] < 30 {
+			if rotCur[0] < 60 {
 				set ship:control:neutralize to true.
 				set stable to false.
+				set steer to landingOffset.
 				lock steering to steer.
-				set steer to heading(lzPosFut:heading, 0).
 				set engStartup to true.
-				set runmode to 5.
+				set runmode to 2.2.
 			} else {
 				if stable = false {
 					if stabilize() = true {
@@ -344,58 +312,54 @@ if landing["landing"] { // If landing is required then proceed with the program 
 				}
 			}
 		}
-		else if runmode = 5 // boostback burn
+		else if runmode = 2.2 // Boostback burn
 		{
-		
-			if 	rotCur[0] < 30 // making sure we point in the right direction before boostback burn
-				and rotCur[0] > -30
-			{
-				set steeringmanager:maxstoppingtime to 2.
-				set steeringmanager:rolltorquefactor to 3.
-				
-				if lzDistImp:mag < posOffset {
-					Engine["Stop"](list(
-						Merlin1D_1,
-						Merlin1D_2
-					)).
-					if impPosFut:position:mag > lzPos:position:mag {
-						Engine["Throttle"](
-						list(
-							list(Merlin1D_0, max(36, min(100, ((posOffset - lzDistImp:mag)/65) + 36 )))
-						)).
-					}
-				} else {
+			// The below values need reviewing
+			set steeringmanager:maxstoppingtime to 2.
+			set steeringmanager:rolltorquefactor to 3.
+			
+			if lzDistImp:mag < posOffset { // If impact position is closer to LZ than offset distance
+				Engine["Stop"](list(
+					Merlin1D_1,
+					Merlin1D_2
+				)).
+				if impPosFut:position:mag > lzPos:position:mag { // If impact position is behind LZ
 					Engine["Throttle"](
 					list(
-						list(Merlin1D_0, 100),
-						list(Merlin1D_1, 100),
-						list(Merlin1D_2, 100)
+						list(Merlin1D_0, max(36, min(100, ((posOffset - lzDistImp:mag)/65) + 36 )))
 					)).
 				}
-				
-				set tval to 1.
-				
-				if engStartup {
-					Engine["Start"](list(
-						Merlin1D_0,
-						Merlin1D_1,
-						Merlin1D_2
-					)).
-					set engStartup to false.
-				}
-				if ullageReq {
-					rcs on.
-					set ship:control:fore to 1.
-					set engStartup to true.
-				} else {
-					rcs off.
-					set ship:control:fore to 0.
-					set engStartup to false.
-				}
+			} else {
+				Engine["Throttle"](
+				list(
+					list(Merlin1D_0, 100),
+					list(Merlin1D_1, 100),
+					list(Merlin1D_2, 100)
+				)).
+			}
+			
+			set tval to 1.
+			
+			if engStartup {
+				Engine["Start"](list(
+					Merlin1D_0,
+					Merlin1D_1,
+					Merlin1D_2
+				)).
+				set engStartup to false.
+			}
+			if ullageReq {
+				rcs on.
+				set ship:control:fore to 1.
+				set engStartup to true.
+			} else {
+				rcs off.
+				set ship:control:fore to 0.
+				set engStartup to false.
 			}
 			
 			if lzDistImp:mag > posOffset {
-				set steer to desiredDir. // steering towards the target
+				set steer to landingOffset. // Steering towards the target
 			}
 			
 			if (lzDistImp:mag >= posOffset) and (lzDistImp:mag < (posOffset * 2)) and (impPosFut:position:mag > lzPos:position:mag) {
@@ -460,6 +424,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 		}
 		else if runmode = 7 // Reentry burn
 		{
+			set steer to -ship:velocity:surface. // Temporary will alter the pitch depending on impact distance and deltaV
 			if altCur <= 55000 { // ------====<<<< Need to change logic to aero drag force or dynamic pressure
 				set ship:control:fore to 0.
 				set posOffset to 500.
@@ -500,10 +465,6 @@ if landing["landing"] { // If landing is required then proceed with the program 
 					set runmode to 8.
 					rcs off.
 				}
-				
-				set steer to desiredDir.
-			} else {
-				set steer to -ship:velocity:surface.
 			}
 		}
 		else if runmode = 8
@@ -595,7 +556,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 			if altCur < lzAlt + 20 or verticalspeed > 0 {
 				set steer to up + r(0, 0, 90).
 			} else {
-				set steer to (-ship:velocity:surface):direction + r(steerPitch, steerYaw, 90).
+				set steer to ship:srfretrograde + r(steerPitch, steerYaw, 90).
 			}
 			
 			if verticalspeed >= 0 {
