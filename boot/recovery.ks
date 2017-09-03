@@ -188,6 +188,10 @@ local lzPosFut is 0.
 local lzAlt is 0.
 local reentryBurnDeltaV is 0.
 
+// Pattern tracking
+local newValue is 0.
+local oldValue is 0.
+
 // ---=== [**END**] [ DECLARING ALL NECESSARY VARIABLES ] [**END**] ===---
 
 // ---=== [**START**] [ GETTING NECESSARY DATA ] [**START**] ===---
@@ -325,60 +329,84 @@ if landing["landing"] { // If landing is required then proceed with the program 
 			set steeringmanager:maxstoppingtime to 2.
 			set steeringmanager:rolltorquefactor to 3.
 
-			if lzDistImp:mag < lzOffsetDist { // If impact position is closer to LZ than offset distance
-				Engine["Stop"](list(
-					Merlin1D_1,
-					Merlin1D_2
-				)).
-				if impPosFut:position:mag > lzPos:position:mag { // If impact position is behind LZ
-					Engine["Throttle"](
-					list(
-						list(Merlin1D_0, max(36, min(100, ((lzOffsetDist - lzDistImp:mag)/65) + 36 )))
+			set newValue to landingOffsetFlat:mag. // Tracking changes in distance to target position
+
+			if landingOffsetFlat:mag > lzOffsetDist * 3 { // If far from target position point in its direction
+				set steer to landingOffsetFlat.
+			} else {
+				if newValue > oldValue { // If went past the target position
+					Engine["Stop"](list(
+						Merlin1D_0,
+						Merlin1D_1,
+						Merlin1D_2
+					)).
+					set tval to 0.
+					unlock steering.
+					set runmode to 3. 
+				} else { // If close to the target position stop 2 engines and adjust throttle of center engine
+					Engine["Stop"](list(
+						Merlin1D_1,
+						Merlin1D_2
+					)).
+					Engine["Throttle"](list(
+						list(Merlin1D_0, max(36, min(100, landingOffsetFlat:mag/(lzOffsetDist*0.03) )))
 					)).
 				}
-			} else {
-				Engine["Throttle"](
-				list(
-					list(Merlin1D_0, 100),
-					list(Merlin1D_1, 100),
-					list(Merlin1D_2, 100)
-				)).
 			}
+			//if lzDistImp:mag < lzOffsetDist { // If impact position is closer to LZ than offset distance
+			//	Engine["Stop"](list(
+			//		Merlin1D_1,
+			//		Merlin1D_2
+			//	)).
+			//	if impPosFut:position:mag > lzPos:position:mag { // If impact position is behind LZ
+			//		Engine["Throttle"](
+			//		list(
+			//			list(Merlin1D_0, max(36, min(100, ((lzOffsetDist - lzDistImp:mag)/65) + 36 )))
+			//		)).
+			//	}
+			//} else {
+			//	Engine["Throttle"](
+			//	list(
+			//		list(Merlin1D_0, 100),
+			//		list(Merlin1D_1, 100),
+			//		list(Merlin1D_2, 100)
+			//	)).
+			//}
 			
-			set tval to 1.
+			//set tval to 1.
 			
-			if engStartup {
-				Engine["Start"](list(
-					Merlin1D_0,
-					Merlin1D_1,
-					Merlin1D_2
-				)).
-				set engStartup to false.
-			}
-			if ullageReq {
-				rcs on.
-				set ship:control:fore to 1.
-				set engStartup to true.
-			} else {
-				rcs off.
-				set ship:control:fore to 0.
-				set engStartup to false.
-			}
+			//if engStartup {
+			//	Engine["Start"](list(
+			//		Merlin1D_0,
+			//		Merlin1D_1,
+			//		Merlin1D_2
+			//	)).
+			//	set engStartup to false.
+			//}
+			//if ullageReq {
+			//	rcs on.
+			//	set ship:control:fore to 1.
+			//	set engStartup to true.
+			//} else {
+			//	rcs off.
+			//	set ship:control:fore to 0.
+			//	set engStartup to false.
+			//}
 			
-			if lzDistImp:mag > lzOffsetDist {
-				set steer to landingOffsetFlat. // Steering towards the target
-			}
+			//if lzDistImp:mag > lzOffsetDist {
+			//	set steer to landingOffsetFlat. // Steering towards the target
+			//}
 			
-			if (lzDistImp:mag >= lzOffsetDist) and (lzDistImp:mag < (lzOffsetDist * 2)) and (impPosFut:position:mag > lzPos:position:mag) {
-				Engine["Stop"](list(
-					Merlin1D_0,
-					Merlin1D_1,
-					Merlin1D_2
-				)).
-				set tval to 0.
-				unlock steering.
-				set runmode to 6.
-			}
+			//if (lzDistImp:mag >= lzOffsetDist) and (lzDistImp:mag < (lzOffsetDist * 2)) and (impPosFut:position:mag > lzPos:position:mag) {
+			//	Engine["Stop"](list(
+			//		Merlin1D_0,
+			//		Merlin1D_1,
+			//		Merlin1D_2
+			//	)).
+			//	set tval to 0.
+			//	unlock steering.
+			//	set runmode to 6.
+			//}
 		}
 		else if runmode = 6 // Reorienting for reentry
 		{
@@ -637,6 +665,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 		set pT to mT.
 		set posPrev to posCur.
 		set impPosPrev to impPosFut.
+		set oldValue to newValue.
 
 		// ---=== [**END**] [ UPDATING VARIABLES AFTER EVERY ITERATION ] [**END**] ===--- //
 		
