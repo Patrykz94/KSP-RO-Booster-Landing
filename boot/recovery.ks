@@ -188,6 +188,7 @@ local lzPosFut is 0.
 local lzAlt is 0.
 local reentryBurnDeltaV is 0.
 local reentryBurnThr is 0.4.
+local flipDir is 0.
 
 // Pattern tracking
 local newValue is 0.
@@ -283,6 +284,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 			set clearRequired to true.
 			if landing["boostback"] {
 				set runmode to 2. // Go to boostback
+				set flipDir to 180.
 			} else {
 				set runmode to 3. // Skip boostback and go straight to reentry
 			}
@@ -313,6 +315,12 @@ if landing["landing"] { // If landing is required then proceed with the program 
 				set steer to lzImpactOffset.
 				lock steering to steer.
 				set engStartup to true.
+				Engine["Throttle"](
+				list(
+					list(Merlin1D_0, 100),
+					list(Merlin1D_1, 100),
+					list(Merlin1D_2, 100)
+				)).
 				set runmode to 2.2.
 			} else {
 				if stable = false {
@@ -331,6 +339,27 @@ if landing["landing"] { // If landing is required then proceed with the program 
 			set steeringmanager:rolltorquefactor to 3.
 
 			set newValue to landingOffsetFlat:mag. // Tracking changes in distance to target position
+
+			set tval to 1.
+			
+			if engStartup { // Start the engines
+				Engine["Start"](list(
+					Merlin1D_0,
+					Merlin1D_1,
+					Merlin1D_2
+				)).
+				set engStartup to false.
+			}
+
+			if ullageReq { // If ullage is required, switch RCS on and thrust forward until fuel is settled
+				rcs on.
+				set ship:control:fore to 1.
+				set engStartup to true. // Keep trying to start the engines
+			} else {
+				rcs off.
+				set ship:control:fore to 0.
+				set engStartup to false.
+			}
 
 			if landingOffsetFlat:mag > lzOffsetDist * 3 { // If far from target position point in its direction
 				set steer to landingOffsetFlat.
@@ -362,74 +391,20 @@ if landing["landing"] { // If landing is required then proceed with the program 
 					)).
 				}
 			}
-			//if lzDistImp:mag < lzOffsetDist { // If impact position is closer to LZ than offset distance
-			//	Engine["Stop"](list(
-			//		Merlin1D_1,
-			//		Merlin1D_2
-			//	)).
-			//	if impPosFut:position:mag > lzPos:position:mag { // If impact position is behind LZ
-			//		Engine["Throttle"](
-			//		list(
-			//			list(Merlin1D_0, max(36, min(100, ((lzOffsetDist - lzDistImp:mag)/65) + 36 )))
-			//		)).
-			//	}
-			//} else {
-			//	Engine["Throttle"](
-			//	list(
-			//		list(Merlin1D_0, 100),
-			//		list(Merlin1D_1, 100),
-			//		list(Merlin1D_2, 100)
-			//	)).
-			//}
-			
-			//set tval to 1.
-			
-			//if engStartup {
-			//	Engine["Start"](list(
-			//		Merlin1D_0,
-			//		Merlin1D_1,
-			//		Merlin1D_2
-			//	)).
-			//	set engStartup to false.
-			//}
-			//if ullageReq {
-			//	rcs on.
-			//	set ship:control:fore to 1.
-			//	set engStartup to true.
-			//} else {
-			//	rcs off.
-			//	set ship:control:fore to 0.
-			//	set engStartup to false.
-			//}
-			
-			//if lzDistImp:mag > lzOffsetDist {
-			//	set steer to landingOffsetFlat. // Steering towards the target
-			//}
-			
-			//if (lzDistImp:mag >= lzOffsetDist) and (lzDistImp:mag < (lzOffsetDist * 2)) and (impPosFut:position:mag > lzPos:position:mag) {
-			//	Engine["Stop"](list(
-			//		Merlin1D_0,
-			//		Merlin1D_1,
-			//		Merlin1D_2
-			//	)).
-			//	set tval to 0.
-			//	unlock steering.
-			//	set runmode to 6.
-			//}
 		}
-		else if runmode = 6 // Reorienting for reentry
+		else if runmode = 3 // Reorienting for reentry
 		{
 			rcs on.
-			stabilize(180).
+			stabilize(flipDir).
 			set eventTime to mT + 3.
-			set runmode to 6.1.
+			set runmode to 3.1.
 			set clearRequired to true.
 		}
-		else if runmode = 6.1
+		else if runmode = 3.1
 		{
 			if mT > eventTime {
 				if stable = false {
-					if stabilize(180) = true {
+					if stabilize(flipDir) = true {
 						set stable to true.
 					}
 				} else {
@@ -437,13 +412,13 @@ if landing["landing"] { // If landing is required then proceed with the program 
 				}
 				if rotCur[0] > 75 {
 					ag5 on.
-					set runmode to 6.2.
+					set runmode to 3.2.
 				}
 			} else {
-				stabilize(180).
+				stabilize(flipDir).
 			}
 		}
-		else if runmode = 6.2
+		else if runmode = 3.2
 		{
 			if rotCur[0] < 60 {
 				set ship:control:neutralize to true.
@@ -458,7 +433,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 				set runmode to 7.
 			} else {
 				if stable = false {
-					if stabilize(180) = true {
+					if stabilize(flipDir) = true {
 						set stable to true.
 					}
 				} else {

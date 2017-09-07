@@ -1,10 +1,6 @@
 @lazyglobal off.
 
 // ---=== [**START**] [ DECLARING VARIABLES ] [**START**] ===--- //
-
-	local KSCLaunchPad is latlng(28.6083859739973, -80.5997467227517).
-	local ASDS_GTO_1 is latlng(28.1322262, -73.4441595).
-	local Waypoint is latlng(28.6183859739973, -80.5997467227517).
 	
 	if volume(1):name = "Falcon9-S2" {
 		local Merlin1D_Vac is ship:partstagged("Merlin1D-Vac")[0].
@@ -180,11 +176,11 @@ function landingBurnTime {
 		//notify("No engines available!").
 		return 0.
 	} else {
-		local f is ens_thrust * thrustL * 1000.  // engine thrust (kg * m/s²)
-		local m is ship:mass * 1000.        // starting mass (kg)
-		local e is constant():e.            // base of natural log
-		local p is ens_isp/ens:length.               // engine isp (s) support to average different isp values
-		local g is ship:orbit:body:mu/ship:obt:body:radius^2.    // gravitational acceleration constant (m/s²)
+		local f is ens_thrust * thrustL * 1000. // engine thrust (kg * m/s²)
+		local m is ship:mass * 1000. // starting mass (kg)
+		local e is constant():e. // base of natural log
+		local p is ens_isp/ens:length. // engine isp (s) support to average different isp values
+		local g is ship:orbit:body:mu/ship:obt:body:radius^2. // gravitational acceleration constant (m/s²)
 		
 		return g * m * p * (1 - e^(-dv/(g*p))) / f.
 	}
