@@ -92,14 +92,12 @@ local velImp is 0.
 local boosterDeltaV is 0.
 
 // Offsets
-local lzOffset is 0.
 local lzOffsetDist is 5000.
 local lzBoosterOffset is 0.
 local lzImpactOffset is 0.
 local landingOffset is 0.
 
 // Steering variables
-
 local tval is 0.
 local stable is false.
 
@@ -221,9 +219,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 		set lzBoosterOffset to vxcl(lzDistCur - body:position, lzDistCur):normalized * lzOffsetDist. // Flattened and sized <lzDistCur>
 		set lzImpactOffset to vxcl(lzDistImp - body:position, lzDistImp):normalized * lzOffsetDist. // Flattened and sized <lzDistImp>
 		// Changing the offset logic [Will need testing]
-		set landingOffset to lzPos:position + lzBoosterOffset - impPosFut:position.
-		set landingOffsetFlat to vxcl(landingOffset - body:position, landingOffset).
-		set lzOffset to landingOffsetFlat:normalized.
+		set landingOffset to lzPos:position + lzBoosterOffset - impPosFut:altitudeposition(lzAlt). // Pos behind the LZ to aim at during descent
 		
 		if runmode = 9 {
 			set landBurnT to landingBurnTime(ship:velocity:surface:mag, landBurnEngs, landBurnThr).
@@ -305,7 +301,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 			set steeringmanager:maxstoppingtime to 2.
 			set steeringmanager:rolltorquefactor to 3.
 
-			set newValue to landingOffsetFlat:mag. // Tracking changes in distance to target position
+			set newValue to landingOffset:mag. // Tracking changes in distance to target position
 
 			set tval to 1.
 			
@@ -328,8 +324,8 @@ if landing["landing"] { // If landing is required then proceed with the program 
 				set engStartup to false.
 			}
 
-			if landingOffsetFlat:mag > lzOffsetDist * 3 { // If far from target position point in its direction
-				set steer to landingOffsetFlat.
+			if landingOffset:mag > lzOffsetDist * 3 { // If far from target position point in its direction
+				set steer to landingOffset.
 			} else {
 				if newValue > oldValue { // If went past the target position
 					Engine["Stop"](list(
@@ -354,7 +350,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 					set Merlin1D_7:gimbal:lock to true.
 					set Merlin1D_8:gimbal:lock to true.
 					Engine["Throttle"](list(
-						list(Merlin1D_0, max(36, min(100, landingOffsetFlat:mag/(lzOffsetDist*0.03) )))
+						list(Merlin1D_0, max(36, min(100, landingOffset:mag/(lzOffsetDist*0.03) )))
 					)).
 				}
 			}
@@ -505,40 +501,32 @@ if landing["landing"] { // If landing is required then proceed with the program 
 			// This will need to be revised
 			set AeroSteeringVel_PID:kp to max(5, min(60, 60-((altCur/1000)*4))).
 
-			if tval = 0 {
-				
-				set lzOffsetDist to max(-500, min(500, lzDistImp:mag/2)).
+			if shipCurrentTWR() < 1.6 and ship:velocity:surface:mag > 120 {
 
-				set DescLatitudeChange_PID:setpoint to body:geopositionof(lzPos:position + landingOffset):lat. // steering
-				set DescLatitude_PID:setpoint to DescLatitudeChange_PID:update(mT, impPosFut:lat).
-				set steerPitch to -DescLatitude_PID:update(mT, velLatImp).
-				
-				set DescLongitudeChange_PID:setpoint to body:geopositionof(lzPos:position + landingOffset):lng.
-				set DescLongitude_PID:setpoint to DescLongitudeChange_PID:update(mT, impPosFut:lng).
-				set steerYaw to -DescLongitude_PID:update(mT, velLngImp).
+				set lzOffsetDist to max(0, min(500, lzDistImp:mag/2)).
+
+				set AeroSteeringVel_PID:setpoint to 0.
+				set AeroSteering_PID:setpoint to AeroSteeringVel_PID:update(mT, landingOffset:mag).
+				set steerAngle to AeroSteering_PID:update(mT, velImp:mag). // This velocity may not be very useful (can be different direction) but will test it to check
 
 			} else {
 				
-				set lzOffsetDist to max(-200, min(200, lzDistImp:mag/2)).
+				set lzOffsetDist to max(0, min(50, lzDistImp:mag/2)).
 				
-				set LandLatitudeChange_PID:setpoint to body:geopositionof(lzPos:position + landingOffset):lat.
-				set LandLatitude_PID:setpoint to LandLatitudeChange_PID:update(mT, impPosFut:lat).
-				set steerPitch to -LandLatitude_PID:update(mT, velLatImp).
-				
-				set LandLongitudeChange_PID:setpoint to body:geopositionof(lzPos:position + landingOffset):lng.
-				set LandLongitude_PID:setpoint to LandLongitudeChange_PID:update(mT, impPosFut:lng).
-				set steerYaw to -LandLongitude_PID:update(mT, velLngImp).
+				set PoweredSteeringVel_PID:setpoint to 0.
+				set PoweredSteering_PID:setpoint to PoweredSteeringVel_PID:update(mT, landingOffset:mag).
+				set steerAngle to PoweredSteering_PID:update(mT, velImp:mag).
 				
 			}
-		
 
 			if altCur < lzAlt + 20 or verticalspeed > 0 {
 				set steer to up.
 			} else {
-				if shipCurrentTWR() < 1.6 and ship:velocity:surface:mag > 120 {
-					set lzImpactOffset to -lzImpactOffset.
+				// May need to tweak this in the future
+				if shipCurrentTWR() < 1.6 and ship:velocity:surface:mag > 120 { // If TWR over 1.6 or speed below 120m/s then engines have more steering power than aerodynamics
+					set lzImpactOffset to -lzImpactOffset. // If aerodynamics have more steering power, reverse the steering
 				}
-				set steer to ship:srfretrograde * angleaxis(steerAngle, lzImpactOffset). // Not sure if this will work correctly
+				set steer to ship:srfretrograde * angleaxis(steerAngle, lzImpactOffset). // Not sure if this will work correctly, needs testing
 			}
 			
 			if verticalspeed >= 0 {
