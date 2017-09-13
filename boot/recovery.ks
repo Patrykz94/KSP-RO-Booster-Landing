@@ -315,8 +315,8 @@ if landing["landing"] { // If landing is required then proceed with the program 
 				set steer to lzImpactOffset.
 				lock steering to steer.
 				set engStartup to true.
-				Engine["Throttle"](
-				list(
+				set eventTime to mT + 2.
+				Engine["Throttle"](list(
 					list(Merlin1D_0, 100),
 					list(Merlin1D_1, 100),
 					list(Merlin1D_2, 100)
@@ -342,13 +342,20 @@ if landing["landing"] { // If landing is required then proceed with the program 
 
 			set tval to 1.
 			
-			if engStartup { // Start the engines
-				Engine["Start"](list(
-					Merlin1D_0,
-					Merlin1D_1,
-					Merlin1D_2
-				)).
-				set engStartup to false.
+			if engStartup or mT > eventTime { // Start the engines (center first then two side engines)
+				if mT > eventTime {
+					Engine["Start"](list(
+						Merlin1D_1,
+						Merlin1D_2
+					)).
+					set engStartup to false.
+				} else {
+					Engine["Start"](list(
+						Merlin1D_0
+					)).
+					set engStartup to false
+					set eventTime to mT + 2.
+				}
 			}
 
 			if ullageReq { // If ullage is required, switch RCS on and thrust forward until fuel is settled
