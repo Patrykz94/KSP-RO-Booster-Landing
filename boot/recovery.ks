@@ -80,7 +80,6 @@ local pitch is 90.
 
 local runmode is 1.
 local cpuName is core:tag.
-local reorienting is false.
 
 // Ship positioning and velocity tracking
 
@@ -166,8 +165,8 @@ local landBurnT is 0. // Landing burn time
 local landBurnH is 0. // Landing burn height
 local landBurnS is 0. // Landing burn speed target
 local landBurnS2 is 0. // Landing burn speed target (touchdown)
-local landBurnEngs is 1. // Number of ladning engines
-local landBurnThr is 0.6.
+local landBurnEngs is 0. // Number of ladning engines
+local landBurnThr is 0.
 local eventTime is 0.
 local event is false.
 
@@ -187,7 +186,7 @@ local lzPos is 0.
 local lzPosFut is 0.
 local lzAlt is 0.
 local reentryBurnDeltaV is 0.
-local reentryBurnThr is 0.4.
+local reentryBurnThr is 0.
 local flipDir is 0.
 
 // Pattern tracking
@@ -205,6 +204,8 @@ if landing["landing"] { // Getting landing data
 			break.
 		}
 	}
+	set landBurnEngs to landing["engines"].
+	set landBurnThr to landing["throttle"].
 	if lzPos = 0 {
 		errorExit("ERROR: LANDING REQUIRED BUT NO LOCATION SELECTED").
 	}
@@ -437,7 +438,8 @@ if landing["landing"] { // If landing is required then proceed with the program 
 				lock steering to steer.
 				set steer to -ship:velocity:surface.
 				set engStartup to true.
-				set runmode to 7.
+				getReentryAngle("new").
+				set runmode to 3.3.
 			} else {
 				if stable = false {
 					if stabilize(flipDir) = true {
@@ -448,50 +450,69 @@ if landing["landing"] { // If landing is required then proceed with the program 
 				}
 			}
 		}
-		else if runmode = 7 // Reentry burn
+		else if runmode = 3.3 // Reentry burn
 		{
-			set steer to -ship:velocity:surface. // Temporary will alter the pitch depending on impact distance and deltaV
-			if altCur <= 55000 { // ------====<<<< Need to change logic to aero drag force or dynamic pressure
-				set ship:control:fore to 0.
-				set lzOffsetDist to 500.
-				
-				set reorienting to false.
-				set tval to 1.
-				
-				if lzDistImp:mag > (lzOffsetDist * 1.1) {
-					Engine["Throttle"](list(
-						list(Merlin1D_0, reentryBurnThr),
-						list(Merlin1D_1, reentryBurnThr),
-						list(Merlin1D_2, reentryBurnThr)
-					)).
+			if reentryBurnDeltaV = 0 {
+				local landingDeltaV is (1/(landBurnThr + (landBurnEngs-1) * landBurnThr * 0.75) - 0.5) * 155 + 350. // Temporary formula
+				set reentryBurnDeltaV to boosterDeltaV - landingDeltaV.
+				if landing["boostback"] {
+					set lzOffsetDist to 500.
 				} else {
-					Engine["Throttle"](list(
-						list(Merlin1D_0, 36),
-						list(Merlin1D_1, 36),
-						list(Merlin1D_2, 36)
-					)).
-				}
-				
-				if engStartup {
-					Engine["Start"](list(
-						Merlin1D_0,
-						Merlin1D_1,
-						Merlin1D_2
-					)).
-					set engStartup to false.
-				}
-				
-				if (lzDistImp:mag <= lzOffsetDist) or (sepDeltaV <= 400) {
-					Engine["Stop"](list(
-						Merlin1D_0,
-						Merlin1D_1,
-						Merlin1D_2
-					)).
-					set tval to 0.
-					set runmode to 8.
-					rcs off.
+					set lzOffsetDist to 1000.
 				}
 			}
+
+			if reentryAngle["fou"] {
+				set steer to nd:deltav.
+			} else {
+				set steer to ship:srfretrograde.
+				if DragForce() > 0.01 {
+					getReentryAngle().
+				}
+			}
+			
+			if shipCurrentTWR() > 0.1 {
+				rcs off.
+			} else {
+				rcs on.
+			}
+			
+			//	set tval to 1.
+			
+			//	if lzDistImp:mag > (lzOffsetDist * 1.1) {
+			//		Engine["Throttle"](list(
+			//			list(Merlin1D_0, reentryBurnThr),
+			//			list(Merlin1D_1, reentryBurnThr),
+			//			list(Merlin1D_2, reentryBurnThr)
+			//		)).
+			//	} else {
+			//		Engine["Throttle"](list(
+			//			list(Merlin1D_0, 36),
+			//			list(Merlin1D_1, 36),
+			//			list(Merlin1D_2, 36)
+			//		)).
+			//	}
+				
+			//	if engStartup {
+			//		Engine["Start"](list(
+			//			Merlin1D_0,
+			//			Merlin1D_1,
+			//			Merlin1D_2
+			//		)).
+			//		set engStartup to false.
+			//	}
+				
+			//	if (lzDistImp:mag <= lzOffsetDist) or (sepDeltaV <= 400) {
+			//		Engine["Stop"](list(
+			//			Merlin1D_0,
+			//			Merlin1D_1,
+			//			Merlin1D_2
+			//		)).
+			//		set tval to 0.
+			//		set runmode to 8.
+			//		rcs off.
+			//	}
+			//}
 		}
 		else if runmode = 8
 		{
@@ -499,7 +520,6 @@ if landing["landing"] { // If landing is required then proceed with the program 
 			if altCur < 45000
 			{
 				set runmode to 9.
-				configureLandingBurn().
 				when timeToAltitude(landBurnH + lzAlt, altCur) < 3 and altCur - lzAlt < 6000 then {
 					set tval to 1.
 					if landBurnEngs = 1 {
