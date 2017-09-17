@@ -73,60 +73,38 @@ if not exists(libsDir) and not exists(configDir) {
 
 wait until ag10.
 
-// Navigation and rocket systems
-
-local compass is 0.
-local pitch is 90.
-
+// Rocket systems
 local runmode is 1.
 local cpuName is core:tag.
 
 // Ship positioning and velocity tracking
-
 local posCur is 0.
 local posPrev is ship:geoposition.
 local altCur is 0.
 
-local impPosCur is 0.
 local impPosPrev is ship:geoposition.
-local impPosFut is ship:geoposition. // may be redundant
-local impDist is 0.
+local impPosFut is ship:geoposition.
 local lzDistCur is 0.
 local lzDistImp is 0.
 
-local velLatCur is 0.
-local velLngCur is 0.
-local velLatImp is 0.
-local velLngImp is 0.
+local velImp is 0.
 
-local sepDeltaV is 0.
+local boosterDeltaV is 0.
 
 // Offsets
-local lzOffset is 0.
 local lzOffsetDist is 5000.
 local lzBoosterOffset is 0.
 local lzImpactOffset is 0.
 local landingOffset is 0.
 
 // Steering variables
-
 local tval is 0.
 local stable is false.
 
 local steer is up.
-local steerPitch is 0.
-local steerYaw is 0.
-
-local pidLimit is 900.
+local steerAngle is 0.
 
 local rotCur is 0.
-local rotPrev is 0.
-local rotSpd is 0.
-
-local Pitch_val is 0.
-local Yaw_val is 0.
-local Pitch_set is 0.
-local Yaw_set is 0.
 
 local engReady is true.
 local engStartup is false.
@@ -138,19 +116,13 @@ local engThrust is 0.
 local AltVel_PID is pidloop(0.2, 0, 0.15, -600, 0.1).
 local VelThr_PID is pidloop(2.1, 9, 0.15, 0.36, 1).
 
-// Aerodynamic steering loops
-local DescLatitudeChange_PID is pidloop(20, 0, 5, -0.1, 0.1).
-local DescLatitude_PID is pidloop(300, 1, 150, -10, 10).
+// Aerodynamic steering loops -------==================================<<<<<<<<<<<<<<< Gains need to be properly tuned
+local AeroSteeringVel_PID is pidloop(20, 0, 5, 0, 100).
+local AeroSteering_PID is pidloop(300, 1, 150, -10, 10).
 
-local DescLongitudeChange_PID is pidloop(20, 0, 5, -0.1, 0.1).
-local DescLongitude_PID is pidloop(300, 1, 150, -10, 10).
-
-// Powered steering loops
-local LandLatitudeChange_PID is pidloop(60, 0, 10, -0.05, 0.05).
-local LandLatitude_PID is pidloop(700, 0, 200, -5, 5).
-
-local LandLongitudeChange_PID is pidloop(60, 0, 10, -0.05, 0.05).
-local LandLongitude_PID is pidloop(700, 0, 200, -5, 5).
+// Powered steering loops -----------==================================<<<<<<<<<<<<<<< Gains need to be properly tuned
+local PoweredSteeringVel_PID is pidloop(60, 0, 10, 0, 5).
+local PoweredSteering_PID is pidloop(700, 0, 200, -5, 5).
 
 // ---== END PID LOOPS ==--- //
 
@@ -183,11 +155,14 @@ local tr is addons:tr.
 // Landing parameters
 local landing is readjson(configDir + "landing_config.json").
 local lzPos is 0.
-local lzPosFut is 0.
 local lzAlt is 0.
 local reentryBurnDeltaV is 0.
+<<<<<<< HEAD
 local reentryBurnThr is 60.
 local flipDir is 0.
+=======
+local reentryBurnThr is 0.4.
+>>>>>>> dev-rew-geo_to_vec
 
 // Pattern tracking
 local newValue is 0.
@@ -232,31 +207,26 @@ if landing["landing"] { // If landing is required then proceed with the program 
 				set merlinData to list( true, Merlin1D_0:maxthrustat(1), Merlin1D_0:maxthrustat(0), Merlin1D_0:slisp, Merlin1D_0:visp).
 			}
 		}
-		set posCur to ship:geoposition.
+
 		set rotCur to list(pitch_for(ship), compass_for(ship), rollConvert()).
-		set velLatCur to (mod(180 + posPrev:lat - posCur:lat, 360) - 180)/dT.
-		set velLngCur to (mod(180 + posPrev:lng - posCur:lng, 360) - 180)/dT.
+		set posCur to ship:geoposition.
 		
-		set impT to timeToAltitude(lzAlt, altCur).
-		set lzPosFut to latlng(lzPos:lat, mod(lzPos:lng + 180 + (impT * bodyRotation), 360) - 180).
+		set impT to timeToAltitude(lzAlt, altCur). // Time to altitude, needs to be changed in the atmosphere
 		
-		set impPosCur to latlng(body:geopositionof(positionat(ship, mT + impT)):lat, body:geopositionof(positionat(ship, mT + impT)):lng - 0.0000801).
 		if tr:hasimpact {
 			set impPosFut to tr:impactpos.
 		}
-		set velLatImp to (mod(180 + impPosPrev:lat - impPosFut:lat, 360) - 180)/dT. // TODO: convert these velocity values to vectors
-		set velLngImp to (mod(180 + impPosPrev:lng - impPosFut:lng, 360) - 180)/dT. // Will need to recalculate PID gains for this
+
+		set velImp to (impPosFut:altitudeposition(lzAlt) - impPosPrev:altitudeposition(lzAlt))/dT.
 		
 		set lzDistCur to lzPos:position - ship:geoposition:altitudeposition(lzAlt). // Vector from ship to LZ
-		set lzDistImp to lzPos:position - impPosFut:position. // Vector from impact point to LZ
-		set sepDeltaV to Fuel["Stage 1 DeltaV"]().
+		set lzDistImp to lzPos:position - impPosFut:altitudeposition(lzAlt). // Vector from impact point to LZ
+		set boosterDeltaV to Fuel["Stage 1 DeltaV"]().
 		
 		set lzBoosterOffset to vxcl(lzDistCur - body:position, lzDistCur):normalized * lzOffsetDist. // Flattened and sized <lzDistCur>
 		set lzImpactOffset to vxcl(lzDistImp - body:position, lzDistImp):normalized * lzOffsetDist. // Flattened and sized <lzDistImp>
 		// Changing the offset logic [Will need testing]
-		set landingOffset to lzPos:position + lzBoosterOffset - impPosFut:position.
-		set landingOffsetFlat to vxcl(landingOffset - body:position, landingOffset).
-		set lzOffset to landingOffsetFlat:normalized.
+		set landingOffset to lzPos:position + lzBoosterOffset - impPosFut:altitudeposition(lzAlt). // Pos behind the LZ to aim at during descent
 		
 		if runmode = 9 {
 			set landBurnT to landingBurnTime(ship:velocity:surface:mag, landBurnEngs, landBurnThr).
@@ -285,7 +255,6 @@ if landing["landing"] { // If landing is required then proceed with the program 
 			set clearRequired to true.
 			if landing["boostback"] {
 				set runmode to 2. // Go to boostback
-				set flipDir to 180.
 			} else {
 				set runmode to 3. // Skip boostback and go straight to reentry
 			}
@@ -339,7 +308,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 			set steeringmanager:maxstoppingtime to 2.
 			set steeringmanager:rolltorquefactor to 3.
 
-			set newValue to landingOffsetFlat:mag. // Tracking changes in distance to target position
+			set newValue to landingOffset:mag. // Tracking changes in distance to target position
 
 			set tval to 1.
 			
@@ -370,8 +339,8 @@ if landing["landing"] { // If landing is required then proceed with the program 
 				set engStartup to false.
 			}
 
-			if landingOffsetFlat:mag > lzOffsetDist * 3 { // If far from target position point in its direction
-				set steer to landingOffsetFlat.
+			if landingOffset:mag > lzOffsetDist * 3 { // If far from target position point in its direction
+				set steer to landingOffset.
 			} else {
 				if newValue > oldValue { // If went past the target position
 					Engine["Stop"](list(
@@ -396,7 +365,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 					set Merlin1D_7:gimbal:lock to true.
 					set Merlin1D_8:gimbal:lock to true.
 					Engine["Throttle"](list(
-						list(Merlin1D_0, max(36, min(100, landingOffsetFlat:mag/(lzOffsetDist*0.03) )))
+						list(Merlin1D_0, max(36, min(100, landingOffset:mag/(lzOffsetDist*0.03) )))
 					)).
 				}
 			}
@@ -404,7 +373,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 		else if runmode = 3 // Reorienting for reentry
 		{
 			rcs on.
-			stabilize(flipDir).
+			stabilize().
 			set eventTime to mT + 3.
 			set runmode to 3.1.
 			set clearRequired to true.
@@ -413,7 +382,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 		{
 			if mT > eventTime {
 				if stable = false {
-					if stabilize(flipDir) = true {
+					if stabilize() = true {
 						set stable to true.
 					}
 				} else {
@@ -424,7 +393,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 					set runmode to 3.2.
 				}
 			} else {
-				stabilize(flipDir).
+				stabilize().
 			}
 		}
 		else if runmode = 3.2
@@ -441,7 +410,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 				set runmode to 3.3.
 			} else {
 				if stable = false {
-					if stabilize(flipDir) = true {
+					if stabilize() = true {
 						set stable to true.
 					}
 				} else {
@@ -580,44 +549,35 @@ if landing["landing"] { // If landing is required then proceed with the program 
 				list(Merlin1D_2, landBurnThr)
 			)).
 			
-			set DescLatitudeChange_PID:kp to max(5, min(60, 60-((altCur/1000)*4))).
-			set DescLongitudeChange_PID:kp to max(5, min(60, 60-((altCur/1000)*4))).
-			
-			if tval = 0 {
-				
-				set lzOffsetDist to max(-500, min(500, lzDistImp:mag/2)).
-				
-				set DescLatitudeChange_PID:setpoint to body:geopositionof(lzPos:position + landingOffset):lat. // steering
-				set DescLatitude_PID:setpoint to DescLatitudeChange_PID:update(mT, impPosFut:lat).
-				set steerPitch to -DescLatitude_PID:update(mT, velLatImp).
-				
-				set DescLongitudeChange_PID:setpoint to body:geopositionof(lzPos:position + landingOffset):lng.
-				set DescLongitude_PID:setpoint to DescLongitudeChange_PID:update(mT, impPosFut:lng).
-				set steerYaw to -DescLongitude_PID:update(mT, velLngImp).
-				
-			} else {
-				
-				set lzOffsetDist to max(-200, min(200, lzDistImp:mag/2)).
-				
-				set LandLatitudeChange_PID:setpoint to body:geopositionof(lzPos:position + landingOffset):lat.
-				set LandLatitude_PID:setpoint to LandLatitudeChange_PID:update(mT, impPosFut:lat).
-				set steerPitch to -LandLatitude_PID:update(mT, velLatImp).
-				
-				set LandLongitudeChange_PID:setpoint to body:geopositionof(lzPos:position + landingOffset):lng.
-				set LandLongitude_PID:setpoint to LandLongitudeChange_PID:update(mT, impPosFut:lng).
-				set steerYaw to -LandLongitude_PID:update(mT, velLngImp).
-				
-			}
-			
+			// This will need to be revised
+			set AeroSteeringVel_PID:kp to max(5, min(60, 60-((altCur/1000)*4))).
+
 			if shipCurrentTWR() < 1.6 and ship:velocity:surface:mag > 120 {
-				set steerPitch to -steerPitch.
-				set steerYaw to -steerYaw.
-			}
-			
-			if altCur < lzAlt + 20 or verticalspeed > 0 {
-				set steer to up + r(0, 0, 90).
+
+				set lzOffsetDist to max(0, min(500, lzDistImp:mag/2)).
+
+				set AeroSteeringVel_PID:setpoint to 0.
+				set AeroSteering_PID:setpoint to AeroSteeringVel_PID:update(mT, landingOffset:mag).
+				set steerAngle to AeroSteering_PID:update(mT, velImp:mag). // This velocity may not be very useful (can be different direction) but will test it to check
+
 			} else {
-				set steer to ship:srfretrograde + r(steerPitch, steerYaw, 90).
+				
+				set lzOffsetDist to max(0, min(50, lzDistImp:mag/2)).
+				
+				set PoweredSteeringVel_PID:setpoint to 0.
+				set PoweredSteering_PID:setpoint to PoweredSteeringVel_PID:update(mT, landingOffset:mag).
+				set steerAngle to PoweredSteering_PID:update(mT, velImp:mag).
+				
+			}
+
+			if altCur < lzAlt + 20 or verticalspeed > 0 {
+				set steer to up.
+			} else {
+				// May need to tweak this in the future
+				if shipCurrentTWR() < 1.6 and ship:velocity:surface:mag > 120 { // If TWR over 1.6 or speed below 120m/s then engines have more steering power than aerodynamics
+					set lzImpactOffset to -lzImpactOffset. // If aerodynamics have more steering power, reverse the steering
+				}
+				set steer to ship:srfretrograde * angleaxis(steerAngle, lzImpactOffset). // Not sure if this will work correctly, needs testing
 			}
 			
 			if verticalspeed >= 0 {
@@ -665,16 +625,14 @@ if landing["landing"] { // If landing is required then proceed with the program 
 			}
 			print "Distance to LZ:            " + round(lzDistCur:mag, 2) + "           " at (3, 28).
 			
-			print "Steer Latitude:            " + round(steerPitch, 2) + "     " at (3, 30).
-			print "Steer Longitude:           " + round(steerYaw, 2) + "     " at (3, 31).
+			print "Steering Angle:            " + round(steerAngle, 1) + "     " at (3, 30).
 			
-			print "Latitude Velocity          " + round(velLatImp, 4) + "         " at (3, 33).
-			print "Longitude Velocity         " + round(velLngImp, 4) + "         " at (3, 34).
+			print "Impact Velocity            " + round(velImp:mag, 1) + "         " at (3, 33).
 		
 			
 		}
 		print "Runmode:                   " + runmode + "     " at (3, 36).
-		print "DeltaV remaining:          " + round(sepDeltaV) + "     " at (3, 37).
+		print "DeltaV remaining:          " + round(boosterDeltaV) + "     " at (3, 37).
 		print "PID loop KP:               " + round(DescLatitudeChange_PID:kp, 2) + "     " at (3, 38).
 		
 		if runmode = 9 {
@@ -689,7 +647,6 @@ if landing["landing"] { // If landing is required then proceed with the program 
 		// ---=== [**START**] [ UPDATING VARIABLES AFTER EVERY ITERATION ] [**START**] ===--- //
 		
 		set pT to mT.
-		set posPrev to posCur.
 		set impPosPrev to impPosFut.
 		set oldValue to newValue.
 
