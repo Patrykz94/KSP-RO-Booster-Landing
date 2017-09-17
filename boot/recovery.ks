@@ -186,7 +186,7 @@ local lzPos is 0.
 local lzPosFut is 0.
 local lzAlt is 0.
 local reentryBurnDeltaV is 0.
-local reentryBurnThr is 0.
+local reentryBurnThr is 60.
 local flipDir is 0.
 
 // Pattern tracking
@@ -346,6 +346,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 			if engStartup or mT > eventTime { // Start the engines (center first then two side engines)
 				if mT > eventTime {
 					Engine["Start"](list(
+						Merlin1D_0,
 						Merlin1D_1,
 						Merlin1D_2
 					)).
@@ -431,13 +432,11 @@ if landing["landing"] { // If landing is required then proceed with the program 
 			if rotCur[0] < 60 {
 				set ship:control:neutralize to true.
 				set stable to false.
-				set steeringmanager:maxstoppingtime to 3.
-				set steeringmanager:rollts to 5.
-				set steeringmanager:pitchts to 5.
-				set steeringmanager:yawts to 5.
+				set steeringmanager:maxstoppingtime to 0.5. // Steer very gently to save RCS fuel
 				lock steering to steer.
 				set steer to -ship:velocity:surface.
 				set engStartup to true.
+				set eventTime to mT + 600.
 				getReentryAngle("new").
 				set runmode to 3.3.
 			} else {
@@ -462,11 +461,66 @@ if landing["landing"] { // If landing is required then proceed with the program 
 				}
 			}
 
+			if (nd:eta < 0 and engStartup) or mT > eventTime { // Start the engines (center first then two side engines)
+				if mT > eventTime {
+					Engine["Start"](list(
+						Merlin1D_0,
+						Merlin1D_1,
+						Merlin1D_2
+					)).
+					set engStartup to false.
+				} else {
+					Engine["Start"](list(
+						Merlin1D_0
+					)).
+					set engStartup to false
+				}
+			}
+
+			if ullageReq { // If ullage is required, switch RCS on and thrust forward until fuel is settled
+				rcs on.
+				set ship:control:fore to 1.
+				set engStartup to true. // Keep trying to start the engines
+			} else {
+				rcs off.
+				set ship:control:fore to 0.
+				set engStartup to false.
+			}
+			
 			if reentryAngle["fou"] {
 				set steer to nd:deltav.
+				set eventTime to mT + nd:eta + 2.
+				if nd:eta < 0 { // If time for reentry, start the engines
+					set tval to 1.
+					if (nd:deltav:mag-100) > 64 {
+						Engine["Throttle"](list(
+							list(Merlin1D_0, reentryBurnThr),
+							list(Merlin1D_1, reentryBurnThr),
+							list(Merlin1D_2, reentryBurnThr)
+						)).
+					} else { // If less than 64m/s maneuver deltav remaining, use only 1 engine
+						Engine["Stop"](list(
+							Merlin1D_1,
+							Merlin1D_2
+						)).
+						Engine["Throttle"](list( // Gradually lower the throttle once burn almost complete
+							list(Merlin1D_0, max(36, min(reentryBurnThr, nd:deltav:mag-64)))
+						)).
+						if (nd:deltav:mag-100) < 0 { // Reentry burn complete
+							Engine["Stop"](list(
+								Merlin1D_0,
+								Merlin1D_1,
+								Merlin1D_2
+							)).
+							set tval to 0.
+							remove nd.
+							set runmode to 4.
+						}
+					}
+				}
 			} else {
-				set steer to ship:srfretrograde.
-				if DragForce() > 0.01 {
+				set steer to -ship:velocity:surface.
+				if DragForce() > 1 { // Once drag has at least 1kN of force, create a meneuver node with eta of 15 secods
 					getReentryAngle().
 				}
 			}
@@ -476,43 +530,6 @@ if landing["landing"] { // If landing is required then proceed with the program 
 			} else {
 				rcs on.
 			}
-			
-			//	set tval to 1.
-			
-			//	if lzDistImp:mag > (lzOffsetDist * 1.1) {
-			//		Engine["Throttle"](list(
-			//			list(Merlin1D_0, reentryBurnThr),
-			//			list(Merlin1D_1, reentryBurnThr),
-			//			list(Merlin1D_2, reentryBurnThr)
-			//		)).
-			//	} else {
-			//		Engine["Throttle"](list(
-			//			list(Merlin1D_0, 36),
-			//			list(Merlin1D_1, 36),
-			//			list(Merlin1D_2, 36)
-			//		)).
-			//	}
-				
-			//	if engStartup {
-			//		Engine["Start"](list(
-			//			Merlin1D_0,
-			//			Merlin1D_1,
-			//			Merlin1D_2
-			//		)).
-			//		set engStartup to false.
-			//	}
-				
-			//	if (lzDistImp:mag <= lzOffsetDist) or (sepDeltaV <= 400) {
-			//		Engine["Stop"](list(
-			//			Merlin1D_0,
-			//			Merlin1D_1,
-			//			Merlin1D_2
-			//		)).
-			//		set tval to 0.
-			//		set runmode to 8.
-			//		rcs off.
-			//	}
-			//}
 		}
 		else if runmode = 8
 		{
