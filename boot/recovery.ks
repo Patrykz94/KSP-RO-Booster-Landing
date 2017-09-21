@@ -159,7 +159,7 @@ local LandLongitude_PID is pidloop(700, 0, 200, -5, 5).
 local sT is time:seconds. // Start of program time
 local dT is 0. // Delta time
 local mT is 0. // Mission elapsed time
-local lT is sT + 15. // Until/since launch
+local lT is 0. // Until/since launch
 local pT is sT. // Previous tick time
 local impT is 0.
 local landBurnT is 0. // Landing burn time
@@ -186,6 +186,7 @@ local landing is readjson(configDir + "landing_config.json").
 local lzPos is 0.
 local lzPosFut is 0.
 local lzAlt is 0.
+local landingBurnDeltaV is 0.
 local reentryBurnDeltaV is 0.
 local reentryBurnThr is 0.4.
 local flipDir is 0.
@@ -208,9 +209,18 @@ if landing["landing"] { // Getting landing data
 	if lzPos = 0 {
 		errorExit("ERROR: LANDING REQUIRED BUT NO LOCATION SELECTED").
 	}
+	set landingBurnDeltaV to (1/(landBurnThr + (landBurnEngs-1) * landBurnThr * 0.75) - 0.5) * 155 + 350. // Temporary formula
 	tr:settarget(lzPos). // Setting target for Trajectories mod
 	set lzAlt to lzPos:terrainheight.
 	when (altCur - lzAlt) < 200 and runmode > 2 then { gear on. } // Setting trigger for landing legs
+}
+
+// Check if lift-off time has been provided by Pegas
+when not ship:messages:empty then {
+	local msg is ship:messages:peek:content.
+	if msg:haskey("liftoffTime") {
+		set lT to msg["liftoffTime"].
+	}
 }
 
 // ---=== [**END**] [ GETTING NECESSARY DATA ] [**END**] ===---
@@ -275,11 +285,36 @@ if landing["landing"] { // If landing is required then proceed with the program 
 		
 		if runmode = 1 // Wait until separation
 		{
-			// {Separation logic here}
-			// if separated {
-			wait 0.
+			set newValue to landingOffset:mag. // Tracking changes in distance to target position
+			if mT - lT > 20 {
+				if landing["boostback"] {
+					// Get required deltaV at separation, landing deltaV + reentry deltaV + boostback deltaV
+					local deltaVatSep is landingBurnDeltaV + (ship:velocity:surface:mag/4) + (groundspeed * 1.4).
+
+					if deltaVatSep > boosterDeltaV {
+						set runmode to 1.1.
+					}
+				} else {
+					// No-boostback separation code
+
+					// This will need to be developed, may be necessary to modify the launch script to make sure it will fly close enough to the ASDS, a temporary solution below
+					if newValue > oldValue {
+						set runmode to 1.1.
+					}
+				}
+			}
+		}
+		else if runmode = 1.1 // Send separation request to launch script
+		{			
+			local msg is lexicon("stagingTime", mT - lT).
+			if processor("Falcon9S2"):connection:sendmessage(msg) {
+				wait 0.
+				set runmode to 1.2.
+			}
+		}
+		else if runmode = 1.2 // Take control of booster after separation
+		{
 			lock throttle to max(0, min(1, tval)).
-			unlock steering.
 			set eventTime to mT + 2.
 			set clearRequired to true.
 			if landing["boostback"] {
@@ -288,7 +323,6 @@ if landing["landing"] { // If landing is required then proceed with the program 
 			} else {
 				set runmode to 3. // Skip boostback and go straight to reentry
 			}
-			// }
 		}
 		else if runmode = 2 // Stabilizing and reorienting for boostback burn [optional]
 		{
