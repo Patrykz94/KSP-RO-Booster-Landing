@@ -158,12 +158,8 @@ local lzPos is 0.
 local lzAlt is 0.
 local landingBurnDeltaV is 0.
 local reentryBurnDeltaV is 0.
-<<<<<<< HEAD
 local reentryBurnThr is 60.
 local flipDir is 0.
-=======
-local reentryBurnThr is 0.4.
->>>>>>> dev-rew-geo_to_vec
 
 // Pattern tracking
 local newValue is 0.
