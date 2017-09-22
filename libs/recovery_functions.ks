@@ -128,23 +128,6 @@
 	).
 }
 
-function landingDeltaV { // Calculating the deltaV required at separation
-	parameter landing is 1.
-	local delv is 0.
-	
-	if landing <> 0 {
-		if landing <= 10 {
-			set delv to (groundspeed * 1.4) + 800 + 400.
-		} else if landing <= 20 {
-			set delv to (groundspeed * 0.75) + 800 + 500.
-		} else {
-			set delv to (groundspeed * 0.4) + 350.
-		}
-	}
-	
-	return delv.
-}
-
 function landingBurnTime {
 	parameter dv.
 	parameter ensNo is 1.
