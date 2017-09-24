@@ -7,11 +7,11 @@ function startScript {
 wait 0.
 set volume(1):name to core:tag.
 if volume(1):name = "Falcon9S1" {
-	startScript()
+	startScript().
 	if not exists("1:/recovery.ks") {
 		copypath("0:/boot/recovery.ks","1:").
 	}
-	set core:bootfilename to "1:/recovery.ks".
+	set core:bootfilename to recovery.ks.
 	reboot.
 } else if volume(1):name = "Falcon9S2" {
 	startScript().

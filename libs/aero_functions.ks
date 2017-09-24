@@ -1,4 +1,3 @@
-@lazyglobal off.
 run "0:/libs/telemetry.ks". // Remove this line later
 
 function ATMDens { // returns the desnity of air at a given altitude as kg/m^3
@@ -152,4 +151,4 @@ local CdDataX1 is list(
 //print "Coefficient of Drag:       " + round(DragCoeff(ship:velocity:surface:mag),4) + "     " at (3, 9).
 //print "Drag Force:                " + round(DragForce(),3) + "     " at (3, 10).
 
-}
+//}

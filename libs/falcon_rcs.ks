@@ -1,5 +1,3 @@
-@lazyglobal off.
-
 local rollAngSpeed is 600/360.
 
 local RollSpd_PID is pidloop(0.2, 0, 0.3, -2, 2).
@@ -67,7 +65,7 @@ function stabilize {
 	parameter pos is 0.
 	set ship:control:neutralize to true.
 	if roll_for(ship) > 1 or roll_for(ship) < -1 {
-		moveRoll(0).
+		moveRoll(pos).
 	} else {
 		killRoll(0.5).
 		killYaw(0.5).
@@ -81,9 +79,14 @@ function stabilize {
 
 function startFlip {
 	parameter flipSpeed is 12.
+	parameter rollDir is 0.
+	set rollDir to rollConvert(rollDir).
 	set ship:control:neutralize to true.
-	killRoll(0.1).
+	moveRoll(rollDir, 0.1).
 	killYaw(0.1).
+	if rollDir = 180 {
+		set flipSpeed to -flipSpeed.
+	}
 	set Pitch_PID:setpoint to flipSpeed.
 	if (-ship:angularmomentum:x/150) < flipSpeed * 0.8 or (-ship:angularmomentum:x/150) > flipSpeed * 1.2 {
 		set ship:control:pitch to Pitch_PID:update(time:seconds, -ship:angularmomentum:x/150).
@@ -94,9 +97,14 @@ function startFlip {
 
 function startFlip2 {
 	parameter flipSpeed is 1.
+	parameter rollDir is 0.
+	set rollDir to rollConvert(rollDir).
 	set ship:control:neutralize to true.
-	moveRoll(180, 0.2).
+	moveRoll(rollDir, 0.2).
 	killYaw(0.1).
+	if rollDir = 180 {
+		set flipSpeed to -flipSpeed.
+	}
 	set Pitch_PID:setpoint to flipSpeed.
 	if (-ship:angularmomentum:x/150) < flipSpeed * 0.8 or (-ship:angularmomentum:x/150) > flipSpeed * 1.2 {
 		set ship:control:pitch to Pitch_PID:update(time:seconds, -ship:angularmomentum:x/150).

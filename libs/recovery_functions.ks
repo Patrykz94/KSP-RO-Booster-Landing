@@ -1,19 +1,14 @@
-@lazyglobal off.
-
 // ---=== [**START**] [ DECLARING VARIABLES ] [**START**] ===--- //
 	
-	if volume(1):name = "Falcon9-S2" {
-		local Merlin1D_Vac is ship:partstagged("Merlin1D-Vac")[0].
-	}
-		local Merlin1D_0 is ship:partstagged("Merlin1D-0")[0].
-		local Merlin1D_1 is ship:partstagged("Merlin1D-1")[0].
-		local Merlin1D_2 is ship:partstagged("Merlin1D-2")[0].
-		local Merlin1D_3 is ship:partstagged("Merlin1D-3")[0].
-		local Merlin1D_4 is ship:partstagged("Merlin1D-4")[0].
-		local Merlin1D_5 is ship:partstagged("Merlin1D-5")[0].
-		local Merlin1D_6 is ship:partstagged("Merlin1D-6")[0].
-		local Merlin1D_7 is ship:partstagged("Merlin1D-7")[0].
-		local Merlin1D_8 is ship:partstagged("Merlin1D-8")[0].
+	local Merlin1D_0 is ship:partstagged("Merlin1D-0")[0].
+	local Merlin1D_1 is ship:partstagged("Merlin1D-1")[0].
+	local Merlin1D_2 is ship:partstagged("Merlin1D-2")[0].
+	local Merlin1D_3 is ship:partstagged("Merlin1D-3")[0].
+	local Merlin1D_4 is ship:partstagged("Merlin1D-4")[0].
+	local Merlin1D_5 is ship:partstagged("Merlin1D-5")[0].
+	local Merlin1D_6 is ship:partstagged("Merlin1D-6")[0].
+	local Merlin1D_7 is ship:partstagged("Merlin1D-7")[0].
+	local Merlin1D_8 is ship:partstagged("Merlin1D-8")[0].
 		
 	local ullageReq is false.
 	
@@ -72,29 +67,6 @@
 		"Stop", stopEngine@,
 		"Throttle", setThrottle@
 	).
-	
-	//--== Starting an engine example: ==--
-	//	Engine["Start"](list(
-	//		mainEngines[0],
-	//		mainEngines[3],
-	//		mainEngines[4]
-	//	)).
-	
-	//--== Stopping an engine example: ==--
-	//	Engine["Stop"](list(
-	//		mainEngines[0],
-	//		mainEngines[3],
-	//		mainEngines[4]
-	//	)).
-	
-	//--== Setting throttle level example: ==--
-	//	Engine["Throttle"](
-	//		list(
-	//			list(mainEngines[0], 36),
-	//			list(mainEngines[3], 36),
-	//			list(mainEngines[4], 36)
-	//	)).
-	
 }
 
 // Falcon Fuel Control Functions (FFCF..)
@@ -203,8 +175,8 @@ function nodeFromVector // create a maneuver node from burn vector
 	local s_rad is vcrs(s_nrm,s_pro).
 
 	set nd:prograde to vdot(vec,s_pro:normalized).
-	set nd:normal is vdot(vec,s_nrm:normalized).
-	set nd:radialout is vdot(vec,s_rad:normalized).
+	set nd:normal to vdot(vec,s_nrm:normalized).
+	set nd:radialout to vdot(vec,s_rad:normalized).
 }
 
 function getReentryAngle { // Generate a burn vector for reentry burn experimentaly by checking landing distance and adjusting multiple times
@@ -219,7 +191,7 @@ function getReentryAngle { // Generate a burn vector for reentry burn experiment
 			"fou", false
 			).
 		global nd is node(mT + 15, 0, 0, reentryBurnDeltaV).
-		nd:add().
+		add nd.
 	}
 
 	if hasnode {
@@ -237,6 +209,6 @@ function getReentryAngle { // Generate a burn vector for reentry burn experiment
 			nodeFromVector(bV, mT + nd:eta).
 		}
 	} else {
-		nd:add().
+		add nd.
 	}
 }

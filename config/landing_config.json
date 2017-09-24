@@ -1,11 +1,43 @@
 {
-	"landing": true,
-	"landing_location": "KSCLaunchPad",
-	"boostback": true,
-	"engines": 1,
-	"throttle": 0.6,
-	"list_of_locations": [
-		{"name": "KSCLaunchPad", "lat": 28.6083859739973, "lng": -80.5997467227517},
-		{"name": "ASDS_GTO_1", "lat": 28.1322262, "lng": -73.4441595}
-	]
+	"entries": [
+		"landing",
+		true,
+		"landing_location",
+		"KSCLaunchPad",
+		"boostback",
+		true,
+		"engines",
+		1,
+		"throttle",
+		0.6,
+		"list_of_locations",
+		{
+			"items": [
+			{
+				"entries": [
+					"name",
+					"KSCLaunchPad",
+					"lat",
+					28.6083859739973,
+					"lng",
+					-80.5997467227517
+				],
+				"$type": "kOS.Safe.Encapsulation.Lexicon"
+			},
+			{
+				"entries": [
+					"name",
+					"ASDS_GTO_1",
+					"lat",
+					28.1322262,
+					"lng",
+					-73.4441595
+				],
+				"$type": "kOS.Safe.Encapsulation.Lexicon"
+			}
+			],
+			"$type": "kOS.Safe.Encapsulation.ListValue"
+		}
+	],
+	"$type": "kOS.Safe.Encapsulation.Lexicon"
 }

@@ -1,5 +1,4 @@
 // Initialising the script
-@lazyglobal off.
 clearscreen.
 set ship:control:pilotmainthrottle to 0.
 wait 0.
@@ -8,49 +7,44 @@ wait 0.
 local once is false.
 until once { // This loop will only work once and breaking it will end the program
 set once to true.
+local error is false.
 
 function errorExit {
 	parameter msg is "ERROR: AN ERROR HAS OCCURED".
 	clearscreen.
 	print msg at(3, 5).
-	break.
 }
 
 // Setting up storage path and creating necessary directories
 local libsDir is "1:/libs/".
 local configDir is "1:/config/".
-if not exists(libsDir) and not exists(configDir) {
-	if not exists(libsDir) {
-		createdir(libsDir).
-	}
-	if not exists(configDir) {
-		createdir(configDir).
-	}
 
-	// List of libraries needed for the program to run
-	local libList is list( // Add .ks files to the list to be loaded (without extensions)
-		"lib_navball",
-		"telemetry",
-		"flight_display",
-		"maneuvers",
-		"functions",
-		"falcon_functions",
-		"falcon_rcs"
-	).
+if not exists(libsDir) {
+	createdir(libsDir).
+}
+if not exists(configDir) {
+	createdir(configDir).
+}
 
-	// Loading required libraries
-	function libDl {
-		parameter libs is list().
-		local error is false.
-		
-		for lib in libs {
-			if not exists("0:/libs/" + lib + ".ks") {
-				set error to true.
-			}
+// List of libraries needed for the program to run
+local libList is list( // Add .ks files to the list to be loaded (without extensions)
+	"aero_functions",
+	"lib_navball",
+	"telemetry",
+	"recovery_functions",
+	"falcon_rcs"
+).
+
+// Loading required libraries
+function libDl {
+	parameter libs is list().
+	
+	for lib in libs {
+		if not exists("0:/libs/" + lib + ".ks") {
+			set error to true.
 		}
-		if error {
-			errorExit("ERROR: A LIBRARY IS NOT AVAILBLE").
-		}
+	}
+	if not error {
 		for lib in libs {
 			copypath("0:/libs/" + lib + ".ks", libsDir).
 		}
@@ -58,20 +52,24 @@ if not exists(libsDir) and not exists(configDir) {
 			runpath(libsDir + lib + ".ks").
 		}
 	}
+}
 
-	libDl(libList).
+libDl(libList).
+// Make sure all libraries were loaded
+if error {
+	errorExit("ERROR: A LIBRARY IS NOT AVAILBLE").
+	break.
+}
 
-	// Loading the config file
-	if exists("0:/config/landing_config.json") {
-		copypath("0:/config/landing_config.json", configDir).
-	} else {
-		errorExit("ERROR: A CONFIG FILE IS NOT AVAILBLE").
-	}
+// Loading the config file
+if exists("0:/config/landing_config.json") {
+	copypath("0:/config/landing_config.json", configDir).
+} else {
+	errorExit("ERROR: A CONFIG FILE IS NOT AVAILBLE").
+	break.
 }
 
 // ---=== [**START**] [ DECLARING ALL NECESSARY VARIABLES ] [**START**] ===---
-
-wait until ag10.
 
 // Rocket systems
 local runmode is 1.
@@ -95,7 +93,7 @@ local boosterDeltaV is 0.
 local lzOffsetDist is 5000.
 local lzBoosterOffset is 0.
 local lzImpactOffset is 0.
-local landingOffset is 0.
+global landingOffset is 0.
 
 // Steering variables
 local tval is 0.
@@ -127,11 +125,10 @@ local PoweredSteering_PID is pidloop(700, 0, 200, -5, 5).
 // ---== END PID LOOPS ==--- //
 
 // Time tracking
-local sT is time:seconds. // Start of program time
 local dT is 0. // Delta time
-local mT is 0. // Mission elapsed time
-local lT is 0. // Until/since launch
-local pT is sT. // Previous tick time
+global mT is time:seconds. // Current time
+local lT is time:seconds. // Until/since launch
+local pT is mT. // Previous tick time
 local impT is 0.
 local landBurnT is 0. // Landing burn time
 local landBurnH is 0. // Landing burn height
@@ -157,13 +154,18 @@ local landing is readjson(configDir + "landing_config.json").
 local lzPos is 0.
 local lzAlt is 0.
 local landingBurnDeltaV is 0.
-local reentryBurnDeltaV is 0.
+global reentryBurnDeltaV is 0.
 local reentryBurnThr is 60.
 local flipDir is 0.
+local partCount is 0. // Used to determine if upper stage has separated already
 
 // Pattern tracking
 local newValue is 0.
 local oldValue is 0.
+
+// Terminal size
+set terminal:width to 60.
+set terminal:height to 50.
 
 // ---=== [**END**] [ DECLARING ALL NECESSARY VARIABLES ] [**END**] ===---
 
@@ -180,6 +182,7 @@ if landing["landing"] { // Getting landing data
 	set landBurnThr to landing["throttle"].
 	if lzPos = 0 {
 		errorExit("ERROR: LANDING REQUIRED BUT NO LOCATION SELECTED").
+		break.
 	}
 	set landingBurnDeltaV to (1/(landBurnThr + (landBurnEngs-1) * landBurnThr * 0.75) - 0.5) * 155 + 350. // Temporary formula
 	tr:settarget(lzPos). // Setting target for Trajectories mod
@@ -192,7 +195,12 @@ when not ship:messages:empty then {
 	local msg is ship:messages:peek:content.
 	if msg:haskey("liftoffTime") {
 		set lT to msg["liftoffTime"].
+		when mT > lT - 15 then {
+			AG9 ON.
+		}
+		return false.
 	}
+	return true.
 }
 
 // ---=== [**END**] [ GETTING NECESSARY DATA ] [**END**] ===---
@@ -259,6 +267,9 @@ if landing["landing"] { // If landing is required then proceed with the program 
 					local deltaVatSep is landingBurnDeltaV + (ship:velocity:surface:mag/4) + (groundspeed * 1.4).
 
 					if deltaVatSep > boosterDeltaV {
+						local p is list().
+						list parts in p.
+						set partCount to p:length.
 						set runmode to 1.1.
 					}
 				} else {
@@ -266,6 +277,9 @@ if landing["landing"] { // If landing is required then proceed with the program 
 
 					// This will need to be developed, may be necessary to modify the launch script to make sure it will fly close enough to the ASDS, a temporary solution below
 					if newValue > oldValue {
+						local p is list().
+						list parts in p.
+						set partCount to p:length.
 						set runmode to 1.1.
 					}
 				}
@@ -275,41 +289,58 @@ if landing["landing"] { // If landing is required then proceed with the program 
 		{			
 			local msg is lexicon("stagingTime", mT - lT).
 			if processor("Falcon9S2"):connection:sendmessage(msg) {
-				wait 0.
 				set runmode to 1.2.
 			}
 		}
 		else if runmode = 1.2 // Take control of booster after separation
 		{
-			lock throttle to max(0, min(1, tval)).
-			set eventTime to mT + 2.
-			set clearRequired to true.
-			if landing["boostback"] {
-				set runmode to 2. // Go to boostback
-			} else {
-				set runmode to 3. // Skip boostback and go straight to reentry
+			local p is list().
+			list parts in p.
+			if p:length <> partCount {
+				wait 0.
+				Engine["Stop"](list(
+					Merlin1D_0,
+					Merlin1D_1,
+					Merlin1D_2,
+					Merlin1D_3,
+					Merlin1D_4,
+					Merlin1D_5,
+					Merlin1D_6,
+					Merlin1D_7,
+					Merlin1D_8
+				)).
+				lock throttle to max(0, min(1, tval)).
+				set eventTime to mT + 2.
+				set clearRequired to true.
+				rcs on.
+				if landing["boostback"] {
+					set runmode to 2. // Go to boostback
+				} else {
+					set runmode to 3. // Skip boostback and go straight to reentry
+					set flipDir to 180.
+				}
 			}
 		}
 		else if runmode = 2 // Stabilizing and reorienting for boostback burn [optional]
 		{
 			if mT > eventTime {
 				if stable = false {
-					if stabilize() = true {
+					if stabilize(flipDir) = true {
 						set stable to true.
 					}
 				} else {
-					startFlip(16).
+					startFlip(24).
 				}
 				if rotCur[0] > 75 {
 					set runmode to 2.1.
 				}
 			} else {
-				stabilize().
+				stabilize(flipDir).
 			}
 		}
 		else if runmode = 2.1 // Reorienting and proceeding to boostback
 		{
-			if rotCur[0] < 60 {
+			if rotCur[0] < 75 {
 				set ship:control:neutralize to true.
 				set stable to false.
 				set steer to lzImpactOffset.
@@ -324,19 +355,19 @@ if landing["landing"] { // If landing is required then proceed with the program 
 				set runmode to 2.2.
 			} else {
 				if stable = false {
-					if stabilize() = true {
+					if stabilize(flipDir) = true {
 						set stable to true.
 					}
 				} else {
-					startFlip(16).
+					startFlip(24).
 				}
 			}
 		}
 		else if runmode = 2.2 // Boostback burn
 		{
 			// The below values need reviewing
-			set steeringmanager:maxstoppingtime to 2.
-			set steeringmanager:rolltorquefactor to 3.
+			set steeringmanager:maxstoppingtime to 1.
+			set steeringmanager:rolltorquefactor to 2.
 
 			set newValue to landingOffset:mag. // Tracking changes in distance to target position
 
@@ -354,7 +385,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 					Engine["Start"](list(
 						Merlin1D_0
 					)).
-					set engStartup to false
+					set engStartup to false.
 					set eventTime to mT + 2.
 				}
 			}
@@ -370,7 +401,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 			}
 
 			if landingOffset:mag > lzOffsetDist * 3 { // If far from target position point in its direction
-				set steer to landingOffset.
+				set steer to lookdirup(landingOffset, body:position).
 			} else {
 				if newValue > oldValue { // If went past the target position
 					Engine["Stop"](list(
@@ -380,7 +411,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 					)).
 					set tval to 0.
 					unlock steering.
-					set runmode to 3. 
+					set runmode to 3.
 				} else { // If close to the target position stop 2 engines and adjust throttle of center engine
 					Engine["Stop"](list(
 						Merlin1D_1,
@@ -403,8 +434,8 @@ if landing["landing"] { // If landing is required then proceed with the program 
 		else if runmode = 3 // Reorienting for reentry
 		{
 			rcs on.
-			stabilize().
-			set eventTime to mT + 3.
+			stabilize(flipDir - 180).
+			set eventTime to mT + 5.
 			set runmode to 3.1.
 			set clearRequired to true.
 		}
@@ -412,23 +443,25 @@ if landing["landing"] { // If landing is required then proceed with the program 
 		{
 			if mT > eventTime {
 				if stable = false {
-					if stabilize() = true {
+					if stabilize(flipDir - 180) = true {
 						set stable to true.
 					}
 				} else {
-					startFlip2(1).
+					startFlip2(1, flipDir - 180).
 				}
-				if rotCur[0] > 75 {
+				if rotCur[0] > 80 {
 					ag5 on.
 					set runmode to 3.2.
 				}
 			} else {
-				stabilize().
+				stabilize(flipDir - 180).
 			}
 		}
 		else if runmode = 3.2
 		{
-			if rotCur[0] < 60 {
+			print "rotCur:    " + round(rotCur[0], 2) + "        " at(3, 40).
+			print "vang:      " + round(90-vang(ship:up:vector, -ship:velocity:surface), 2) + "        " at(3, 41).
+			if rotCur[0] - 1 < 90-vang(ship:up:vector, -ship:velocity:surface) {
 				set ship:control:neutralize to true.
 				set stable to false.
 				set steeringmanager:maxstoppingtime to 0.5. // Steer very gently to save RCS fuel
@@ -440,19 +473,18 @@ if landing["landing"] { // If landing is required then proceed with the program 
 				set runmode to 3.3.
 			} else {
 				if stable = false {
-					if stabilize() = true {
+					if stabilize(flipDir - 180) = true {
 						set stable to true.
 					}
 				} else {
-					startFlip(1).
+					startFlip(1, flipDir - 180).
 				}
 			}
 		}
 		else if runmode = 3.3 // Reentry burn
 		{
 			if reentryBurnDeltaV = 0 {
-				local landingDeltaV is (1/(landBurnThr + (landBurnEngs-1) * landBurnThr * 0.75) - 0.5) * 155 + 350. // Temporary formula
-				set reentryBurnDeltaV to boosterDeltaV - landingDeltaV.
+				set reentryBurnDeltaV to boosterDeltaV - landingBurnDeltaV.
 				if landing["boostback"] {
 					set lzOffsetDist to 500.
 				} else {
@@ -472,7 +504,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 					Engine["Start"](list(
 						Merlin1D_0
 					)).
-					set engStartup to false
+					set engStartup to false.
 				}
 			}
 
@@ -513,7 +545,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 							)).
 							set tval to 0.
 							remove nd.
-							set runmode to 4.
+							set runmode to 8. // Will need to change this number
 						}
 					}
 				}
@@ -628,42 +660,55 @@ if landing["landing"] { // If landing is required then proceed with the program 
 			set clearRequired to false.
 		}
 		
-		
-		displayFlightData().
-		if runmode < 4 {
-			displayLaunchData().
-		}
-		
 		if runmode >= 8 {
 			
 			set vec1 to vecdraw(ship:position, impPosFut:position, rgb(1,0,0), "Imp", 1, true).
 			set vec2 to vecdraw(ship:position, posCur:position, rgb(0,1,0), "Pos", 1, true).
 			set vec3 to vecdraw(ship:position, lzPos:position + landingOffset, rgb(1,1,1), "LO2", 1, true).
 		}
+
+		//Title bar
+		print "------------------- Flight Display 1.0 --------------------"																at (1,1).
+		print "Launch Time:             T" + round(mT - lT) + "               "															at (3,2).
+		// Body info
+		print "Current Body:            " + currentBody() + "               "															at (3,3).
+		print "Atm Height:              " + atmHeight() + "               "																at (3,4).
+		print "SL Gravity:              " + round(staticGravity(), 2) + "               "												at (3,5).
+		print "                                                           "																at (1,6).
+		print "Current Gravity:         " + round(gravity(ship:altitude), 2) + "               "										at (3,7).
+		print "TWR:                     " + round(shipCurrentTWR(), 2) + " / " + round(shipTWR(), 2) + "               "				at (3,8).
+		print "                                                           "																at (1,9).
+		print "Heading:                 " + round(compass_for(ship), 2) + "               "												at (3,10).
+		print "Pitch:                   " + round(pitch_for(ship), 2) + "               "												at (3,11).
+		print "Roll:                    " + round(roll_for(ship), 2) + "               "												at (3,12).
+		print "                                                          "																at (1,13).
+		print "Sea Level Altitude:      " + round(ship:altitude / 1000 , 1) + "km               "										at (3,14).
+		print "                                                           "																at (1,15).
+		print "-----------------------------------------------------------"																at (1,16).
 		
-		if runmode >= 4 {
-			print "Current Position:          " + round(longitude, 3) + ", " + round(latitude, 3) + "             " at (3,20).
-			print "Impact Position:           " + round(impPosFut:lng, 3) + ", " + round(impPosFut:lat, 3) + "             " at (3,21).
-			
-			print "Impact Time:               " + round(impT, 2) + "     " at (3, 23).
-			print "Impact Distance:           " + round(lzDistImp:mag, 2) + "          " at (3, 25).
-			
-			if runmode >= 9 {
-			print "Position offset:           " + round(landingOffset:mag, 2) + "           " at (3, 27).
-			} else {
-			print "LZ offset distance:        " + round(lzOffsetDist, 2) + "           " at (3, 27).
-			}
-			print "Distance to LZ:            " + round(lzDistCur:mag, 2) + "           " at (3, 28).
-			
-			print "Steering Angle:            " + round(steerAngle, 1) + "     " at (3, 30).
-			
-			print "Impact Velocity            " + round(velImp:mag, 1) + "         " at (3, 33).
+		print "Drag Force:                " + round(DragForce(),3) + "     " at (3, 17).
+		print "Terminal Velocity:         " + round(TermVel(ship:altitude),2) + "     " at (3, 18).
+
+		print "Current Position:          " + round(longitude, 3) + ", " + round(latitude, 3) + "             " at (3,20).
+		print "Impact Position:           " + round(impPosFut:lng, 3) + ", " + round(impPosFut:lat, 3) + "             " at (3,21).
 		
-			
+		print "Impact Time:               " + round(impT, 2) + "     " at (3, 23).
+		print "Impact Distance:           " + round(lzDistImp:mag, 2) + "          " at (3, 25).
+		
+		if runmode >= 9 {
+		print "Position offset:           " + round(landingOffset:mag, 2) + "           " at (3, 27).
+		} else {
+		print "LZ offset distance:        " + round(lzOffsetDist, 2) + "           " at (3, 27).
 		}
+		print "Distance to LZ:            " + round(lzDistCur:mag, 2) + "           " at (3, 28).
+		
+		print "Steering Angle:            " + round(steerAngle, 1) + "     " at (3, 30).
+		
+		print "Impact Velocity            " + round(velImp:mag, 1) + "         " at (3, 33).
+
 		print "Runmode:                   " + runmode + "     " at (3, 36).
 		print "DeltaV remaining:          " + round(boosterDeltaV) + "     " at (3, 37).
-		print "PID loop KP:               " + round(DescLatitudeChange_PID:kp, 2) + "     " at (3, 38).
+		print "PID loop KP:               " + round(AeroSteeringVel_PID:kp, 2) + "     " at (3, 38).
 		
 		if runmode = 9 {
 			print "Time:                    " + round(landBurnT, 5) + "     " at (3, 42).
