@@ -333,7 +333,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 						set stable to true.
 					}
 				} else {
-					startFlip(24).
+					startFlip(24, flipDir).
 				}
 				if rotCur[0] > 75 {
 					set runmode to 2.1.
@@ -451,7 +451,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 						set stable to true.
 					}
 				} else {
-					startFlip2(1, flipDir - 180).
+					startFlip(1, flipDir - 180).
 				}
 				if rotCur[0] > 80 {
 					ag5 on.
