@@ -190,17 +190,21 @@ if landing["landing"] { // Getting landing data
 	when (altCur - lzAlt) < 200 and runmode > 2 then { gear on. } // Setting trigger for landing legs
 }
 
-// Check if lift-off time has been provided by Pegas
-when not ship:messages:empty then {
-	local msg is ship:messages:peek:content.
-	if msg:haskey("liftoffTime") {
-		set lT to msg["liftoffTime"].
-		when mT > lT - 15 then {
-			AG9 ON.
+// Request a lift-off time from Pegas
+if processor("Falcon9S2"):connection:sendmessage("requestData", "liftOffTime") {
+	when not ship:messages:empty then {
+		local msg is ship:messages:pop:content.
+		if msg:haskey("liftoffTime") {
+			set lT to msg["liftoffTime"].
+			when mT > lT - 15 then {
+				AG9 ON.
+			}
+			return false.
 		}
-		return false.
 	}
-	return true.
+} else {
+	errorExit("ERROR: FAILED TO SEND A MESSAGE. CHECK MESSAGE RECEIVER AND TRY AGAIN.").
+	break.
 }
 
 // ---=== [**END**] [ GETTING NECESSARY DATA ] [**END**] ===---
