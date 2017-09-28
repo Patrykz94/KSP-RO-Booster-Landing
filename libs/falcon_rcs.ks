@@ -62,10 +62,11 @@ function killPit {
 }
 
 function stabilize {
-	parameter pos is 0.
+	parameter roll is 0.
+	set roll to rollConvert(roll).
 	set ship:control:neutralize to true.
 	if roll_for(ship) > 1 or roll_for(ship) < -1 {
-		moveRoll(pos).
+		moveRoll(roll).
 	} else {
 		killRoll(0.5).
 		killYaw(0.5).
@@ -82,29 +83,20 @@ function startFlip {
 	parameter rollDir is 0.
 	set rollDir to rollConvert(rollDir).
 	set ship:control:neutralize to true.
-	moveRoll(rollDir, 0.1).
-	killYaw(0.1).
 	if rollDir = 180 {
 		set flipSpeed to -flipSpeed.
 	}
-	set Pitch_PID:setpoint to flipSpeed.
-	if (-ship:angularmomentum:x/150) < flipSpeed * 0.8 or (-ship:angularmomentum:x/150) > flipSpeed * 1.2 {
-		set ship:control:pitch to Pitch_PID:update(time:seconds, -ship:angularmomentum:x/150).
+	if vang(up:vector, ship:facing:topvector) < vang(up:vector, -ship:facing:topvector) {
+		set rollDir to 0.
 	} else {
-		set ship:control:pitch to 0.
+		set rollDir to 180.
 	}
-}
-
-function startFlip2 {
-	parameter flipSpeed is 1.
-	parameter rollDir is 0.
-	set rollDir to rollConvert(rollDir).
-	set ship:control:neutralize to true.
-	moveRoll(rollDir, 0.2).
+	if vang(up:vector, ship:facing:forevector) < 20 {
+		killRoll(0.2).
+	} else {
+		moveRoll(rollDir, 0.2).
+	}
 	killYaw(0.1).
-	if rollDir = 180 {
-		set flipSpeed to -flipSpeed.
-	}
 	set Pitch_PID:setpoint to flipSpeed.
 	if (-ship:angularmomentum:x/150) < flipSpeed * 0.8 or (-ship:angularmomentum:x/150) > flipSpeed * 1.2 {
 		set ship:control:pitch to Pitch_PID:update(time:seconds, -ship:angularmomentum:x/150).
