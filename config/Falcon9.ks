@@ -7,13 +7,13 @@ GLOBAL vehicle IS LIST(
 						"gLim", 3,
 						"engines", LIST(LEXICON("isp", 348, "thrust", 934120)),
 						"staging", LEXICON(
-										"jettison", TRUE,
-										"waitBeforeJettison", 3,
+										"shutdownRequired", TRUE,
+										"jettison", FALSE,
 										"ignition", TRUE,
-										"waitBeforeIgnition", 1,
+										"waitBeforeIgnition", 3,
 										"ullage", "rcs",
-										"ullageBurnDuration", 5,
-										"postUllageBurn", 3
+										"ullageBurnDuration", 2,
+										"postUllageBurn", 2
 										)
 					)
 ).
