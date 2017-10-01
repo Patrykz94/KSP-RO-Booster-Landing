@@ -169,7 +169,7 @@ function configureLandingBurn {
 function nodeFromVector // create a maneuver node from burn vector
 {
 	parameter vec, n_time is time:seconds.
-	local s_pro is velociyat(ship,n_time):surface.
+	local s_pro is velocityat(ship,n_time):surface.
 	local s_pos is positionat(ship,n_time) - body:position.
 	local s_nrm is vcrs(s_pro,s_pos).
 	local s_rad is vcrs(s_nrm,s_pro).
@@ -187,28 +187,35 @@ function getReentryAngle { // Generate a burn vector for reentry burn experiment
 			"id", 0,
 			"dist", 1000000,
 			"ang", 0,
-			"inc", 1,
+			"inc", 0.1,
+			"best", v(0,0,0),
+			"bestD", 100000,
 			"fou", false
 			).
-		global nd is node(mT + 15, 0, 0, reentryBurnDeltaV).
+		global nd is node(mT + 25, 0, 0, reentryBurnDeltaV).
 		add nd.
-	}
-
-	if hasnode {
-		if reentryAngle["dist"] < 50 { // At the moment, the script assumes reentry burn only needs to change prograde and radial values and not normal. This will need to be changed
-			nodeFromVector(nd:deltav:normalized * (reentryBurnDeltaV + 100), nd:eta). // For steering reasons, the final meneuver node will have 100m/s extra velocity than needed
-			set reentryAngle["fou"] to true.
-		} else {
-			set reentryAngle["id"] to reentryAngle["id"] + 1.
-			if landingOffset:mag > reentryAngle["dist"] {
-				set reentryAngle["inc"] to -reentryAngle["inc"]/2.
-			}
-			set reentryAngle["dist"] to landingOffset:mag.
-			set reentryAngle["ang"] to reentryAngle["ang"] + reentryAngle["inc"].
-			local bV is (lookdirup(nd:deltav, up:vector) * angleaxis(reentryAngle["ang"], landingOffset)):forevector * reentryBurnDeltaV.
-			nodeFromVector(bV, mT + nd:eta).
-		}
 	} else {
-		add nd.
+		if hasnode {
+			if nd:eta < 5 { // At the moment, the script assumes reentry burn only needs to change prograde and radial values and not normal. This will need to be changed
+				local bV is reentryAngle["best"]:normalized * (reentryBurnDeltaV + 100).
+				nodeFromVector(bV, mT + nd:eta). // For steering reasons, the final meneuver node will have 100m/s extra velocity than needed
+				set reentryAngle["fou"] to true.
+			} else {
+				set reentryAngle["id"] to reentryAngle["id"] + 1.
+				if landingOffset:mag > reentryAngle["dist"] {
+					set reentryAngle["inc"] to -reentryAngle["inc"]/10.
+				}
+				set reentryAngle["dist"] to landingOffset:mag.
+				set reentryAngle["ang"] to reentryAngle["ang"] + reentryAngle["inc"].
+				if reentryAngle["dist"] < reentryAngle["bestD"] {
+					set reentryAngle["bestD"] to reentryAngle["dist"].
+					set reentryAngle["best"] to nd:deltav.
+				}
+				local bV is (lookdirup(nd:deltav, up:vector) * angleaxis(reentryAngle["ang"], landingOffset:normalized)):forevector * reentryBurnDeltaV.
+				nodeFromVector(bV, mT + nd:eta).
+			}
+		} else {
+			add nd.
+		}
 	}
 }
