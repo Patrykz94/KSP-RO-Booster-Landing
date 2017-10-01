@@ -130,9 +130,9 @@ global mT is time:seconds. // Current time
 local lT is time:seconds. // Until/since launch
 local pT is mT. // Previous tick time
 local impT is 0.
-local landBurnT is 0. // Landing burn time
-local landBurnH is 0. // Landing burn height
-local landBurnS is 0. // Landing burn speed target
+global landBurnT is 0. // Landing burn time
+global landBurnH is 0. // Landing burn height
+global landBurnS is 0. // Landing burn speed target
 local landBurnS2 is 0. // Landing burn speed target (touchdown)
 local landBurnEngs is 0. // Number of ladning engines
 local landBurnThr is 0.
@@ -160,8 +160,8 @@ local flipDir is 0.
 local partCount is 0. // Used to determine if upper stage has separated already
 
 // Pattern tracking
-local newValue is 0.
-local oldValue is 0.
+local newValue is list(0,0,0).
+local oldValue is list(0,0,0).
 
 // Terminal size
 set terminal:width to 60.
@@ -191,7 +191,7 @@ if landing["landing"] { // Getting landing data
 }
 
 // Request a lift-off time from Pegas
-if processor("Falcon9S2"):connection:sendmessage("requestData", "liftOffTime") {
+if processor("Falcon9S2"):connection:sendmessage(lexicon("requestData", "liftOffTime")) {
 	when not ship:messages:empty then {
 		local msg is ship:messages:pop:content.
 		if msg:haskey("liftoffTime") {
@@ -264,34 +264,50 @@ if landing["landing"] { // If landing is required then proceed with the program 
 		
 		if runmode = 1 // Wait until separation
 		{
-			set newValue to landingOffset:mag. // Tracking changes in distance to target position
 			if mT - lT > 20 {
 				if landing["boostback"] {
 					// Get required deltaV at separation, landing deltaV + reentry deltaV + boostback deltaV
-					local deltaVatSep is landingBurnDeltaV + (ship:velocity:surface:mag/4) + (groundspeed * 1.4).
-
-					if deltaVatSep > boosterDeltaV {
+					set newValue[0] to boosterDeltaV.
+					set newValue[1] to ship:velocity:surface:mag.
+					set newValue[2] to groundspeed.
+					local dvRate is (oldValue[0] - newValue[0])/dT.
+					local velRate is (newValue[1] - oldValue[1])/dT.
+					local groundRate is (newValue[2] - oldValue[2])/dT.
+					local dvIn5 is boosterDeltaV - (dvRate * 5).
+					local velIn5 is ship:velocity:surface:mag + (velRate * 5).
+					local groundIn5 is groundspeed + (groundRate * 5).
+					local deltaVatSep is landingBurnDeltaV + (velIn5/4) + (groundIn5 * 1.4).
+					if deltaVatSep > dvIn5 {
 						local p is list().
 						list parts in p.
 						set partCount to p:length.
 						set runmode to 1.1.
 					}
-				} else {
+					print "DeltaV rate:     " + round(dvRate,2) + "           " at (3, 40).
+					} else {
 					// No-boostback separation code
-
+					set newValue[0] to landingOffset:mag.
 					// This will need to be developed, may be necessary to modify the launch script to make sure it will fly close enough to the ASDS, a temporary solution below
-					if newValue > oldValue {
+					if newValue[0] > oldValue[0] {
 						local p is list().
 						list parts in p.
 						set partCount to p:length.
 						set runmode to 1.1.
 					}
 				}
+			} else {
+				if landing["boostback"] {
+					set newValue[0] to boosterDeltaV.
+					set newValue[1] to ship:velocity:surface:mag.
+					set newValue[2] to groundspeed.
+				} else {
+					set newValue[0] to landingOffset:mag. // Tracking changes in distance to target position
+				}
 			}
 		}
 		else if runmode = 1.1 // Send separation request to launch script
 		{			
-			local msg is lexicon("stagingTime", mT - lT).
+			local msg is lexicon("stagingTime", mT - lT + 5).
 			if processor("Falcon9S2"):connection:sendmessage(msg) {
 				set runmode to 1.2.
 			}
@@ -314,7 +330,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 					Merlin1D_8
 				)).
 				lock throttle to max(0, min(1, tval)).
-				set eventTime to mT + 2.
+				set eventTime to mT + 3.
 				set clearRequired to true.
 				rcs on.
 				if landing["boostback"] {
@@ -373,7 +389,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 			set steeringmanager:maxstoppingtime to 1.
 			set steeringmanager:rolltorquefactor to 2.
 
-			set newValue to landingOffset:mag. // Tracking changes in distance to target position
+			set newValue[0] to landingOffset:mag. // Tracking changes in distance to target position
 
 			set tval to 1.
 			
@@ -407,7 +423,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 			if landingOffset:mag > lzOffsetDist * 3 { // If far from target position point in its direction
 				set steer to lookdirup(landingOffset, body:position).
 			} else {
-				if newValue > oldValue { // If went past the target position
+				if newValue[0] > oldValue[0] { // If went past the target position
 					Engine["Stop"](list(
 						Merlin1D_0,
 						Merlin1D_1,
@@ -451,7 +467,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 						set stable to true.
 					}
 				} else {
-					startFlip(1, flipDir - 180).
+					startFlip(1.5, flipDir - 180).
 				}
 				if rotCur[0] > 80 {
 					ag5 on.
@@ -468,12 +484,23 @@ if landing["landing"] { // If landing is required then proceed with the program 
 			if rotCur[0] - 1 < 90-vang(ship:up:vector, -ship:velocity:surface) {
 				set ship:control:neutralize to true.
 				set stable to false.
-				set steeringmanager:maxstoppingtime to 0.5. // Steer very gently to save RCS fuel
+				set steeringmanager:rollts to 15.
+				set steeringmanager:pitchts to 10.
+				set steeringmanager:yawts to 10.
+				set steeringmanager:maxstoppingtime to 1. // Steer very gently to save RCS fuel
 				lock steering to steer.
-				set steer to -ship:velocity:surface.
+				set steer to lookdirup(-ship:velocity:surface, ship:facing:topvector).
 				set engStartup to true.
 				set eventTime to mT + 600.
+				if landing["boostback"] {
+					set lzOffsetDist to 500.
+				} else {
+					set lzOffsetDist to 1000.
+				}
 				getReentryAngle("new").
+				when DragForce() > 0.45 then {
+					set nd:eta to 25.
+				}
 				set runmode to 3.3.
 			} else {
 				if stable = false {
@@ -481,7 +508,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 						set stable to true.
 					}
 				} else {
-					startFlip(1, flipDir - 180).
+					startFlip(1.5, flipDir - 180).
 				}
 			}
 		}
@@ -489,11 +516,6 @@ if landing["landing"] { // If landing is required then proceed with the program 
 		{
 			if reentryBurnDeltaV = 0 {
 				set reentryBurnDeltaV to boosterDeltaV - landingBurnDeltaV.
-				if landing["boostback"] {
-					set lzOffsetDist to 500.
-				} else {
-					set lzOffsetDist to 1000.
-				}
 			}
 
 			if (nd:eta < 0 and engStartup) or mT > eventTime { // Start the engines (center first then two side engines)
@@ -523,7 +545,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 			}
 			
 			if reentryAngle["fou"] {
-				set steer to nd:deltav.
+				set steer to lookdirup(nd:deltav, ship:facing:topvector).
 				set eventTime to mT + nd:eta + 2.
 				if nd:eta < 0 { // If time for reentry, start the engines
 					set tval to 1.
@@ -554,13 +576,12 @@ if landing["landing"] { // If landing is required then proceed with the program 
 					}
 				}
 			} else {
-				set steer to -ship:velocity:surface.
-				if DragForce() > 1 { // Once drag has at least 1kN of force, create a meneuver node with eta of 15 secods
-					getReentryAngle().
-				}
+				set steer to lookdirup(-ship:velocity:surface, ship:facing:topvector).
+				if vang(-ship:velocity:surface, ship:facing:forevector) < 2 { rcs off.} else { rcs on. }
+				if DragForce() > 0.5 { getReentryAngle(). } // Once drag has at least 1kN of force, create a meneuver node with eta of 15 secods
 			}
 			
-			if shipCurrentTWR() > 0.1 {
+			if shipCurrentTWR() > 0.5 {
 				rcs off.
 			} else {
 				rcs on.
@@ -568,7 +589,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 		}
 		else if runmode = 8
 		{
-			set steer to -ship:velocity:surface.
+			set steer to lookdirup(-ship:velocity:surface, ship:facing:topvector).
 			if altCur < 45000
 			{
 				set runmode to 9.
@@ -643,7 +664,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 				if shipCurrentTWR() < 1.6 and ship:velocity:surface:mag > 120 { // If TWR over 1.6 or speed below 120m/s then engines have more steering power than aerodynamics
 					set lzImpactOffset to -lzImpactOffset. // If aerodynamics have more steering power, reverse the steering
 				}
-				set steer to ship:srfretrograde * angleaxis(steerAngle, lzImpactOffset). // Not sure if this will work correctly, needs testing
+				set steer to lookdirup(-ship:velocity:surface, ship:facing:topvector) * angleaxis(steerAngle, lzImpactOffset). // Not sure if this will work correctly, needs testing
 			}
 			
 			if verticalspeed >= 0 {
@@ -672,62 +693,59 @@ if landing["landing"] { // If landing is required then proceed with the program 
 		}
 
 		//Title bar
-		print "------------------- Flight Display 1.0 --------------------"																at (1,1).
-		print "Launch Time:             T" + round(mT - lT) + "               "															at (3,2).
-		// Body info
-		print "Current Body:            " + currentBody() + "               "															at (3,3).
-		print "Atm Height:              " + atmHeight() + "               "																at (3,4).
-		print "SL Gravity:              " + round(staticGravity(), 2) + "               "												at (3,5).
-		print "                                                           "																at (1,6).
-		print "Current Gravity:         " + round(gravity(ship:altitude), 2) + "               "										at (3,7).
-		print "TWR:                     " + round(shipCurrentTWR(), 2) + " / " + round(shipTWR(), 2) + "               "				at (3,8).
-		print "                                                           "																at (1,9).
-		print "Heading:                 " + round(compass_for(ship), 2) + "               "												at (3,10).
-		print "Pitch:                   " + round(pitch_for(ship), 2) + "               "												at (3,11).
-		print "Roll:                    " + round(roll_for(ship), 2) + "               "												at (3,12).
-		print "                                                          "																at (1,13).
-		print "Sea Level Altitude:      " + round(ship:altitude / 1000 , 1) + "km               "										at (3,14).
-		print "                                                           "																at (1,15).
-		print "-----------------------------------------------------------"																at (1,16).
-		
-		print "Drag Force:                " + round(DragForce(),3) + "     " at (3, 17).
-		print "Terminal Velocity:         " + round(TermVel(ship:altitude),2) + "     " at (3, 18).
+		print "------------------- Flight Display 1.0 --------------------"						at (1, 1).
+		print "Launch Time:             T" + round(mT - lT) + "               "					at (3, 2).
 
-		print "Current Position:          " + round(longitude, 3) + ", " + round(latitude, 3) + "             " at (3,20).
-		print "Impact Position:           " + round(impPosFut:lng, 3) + ", " + round(impPosFut:lat, 3) + "             " at (3,21).
+		print "Runmode:                   " + runmode + "     "									at (3, 4).
+		print "DeltaV remaining:          " + round(boosterDeltaV) + "     "					at (3, 5).
+
+		print "Drag Force:                " + round(DragForce(),3) + "     "					at (3, 7).
+		print "Terminal Velocity:         " + round(TermVel(ship:altitude),2) + "     "			at (3, 8).
 		
-		print "Impact Time:               " + round(impT, 2) + "     " at (3, 23).
-		print "Impact Distance:           " + round(lzDistImp:mag, 2) + "          " at (3, 25).
+		print "Impact Time:               " + round(impT, 2) + "     "							at (3, 10).
+		print "Impact Distance:           " + round(lzDistImp:mag, 2) + "          " 			at (3, 11).
 		
-		if runmode >= 9 {
-		print "Position offset:           " + round(landingOffset:mag, 2) + "           " at (3, 27).
-		} else {
-		print "LZ offset distance:        " + round(lzOffsetDist, 2) + "           " at (3, 27).
+		print "Landing offset:            " + round(landingOffset:mag, 2) + "           " 		at (3, 13).
+		print "LZ offset distance:        " + round(lzOffsetDist, 2) + "           " 			at (3, 14).
+		print "Distance to LZ:            " + round(lzDistCur:mag, 2) + "           " 			at (3, 15).
+		
+		print "Steering Angle:            " + round(steerAngle, 1) + "     "					at (3, 17).
+		
+		print "Impact Velocity            " + round(velImp:mag, 1) + "         "				at (3, 19).
+
+		print "Landing DeltaV:            " + round(landingBurnDeltaV, 1) + "        "			at (3, 21).
+		
+		if runmode = 3.3 {
+		print "Reentry DeltaV:            " + round(reentryBurnDeltaV, 1) + "     "				at (3, 22).
+
+		print "ID:	       " + reentryAngle["id"] + "          " 	at (3, 24).
+		print "Dist:	   " + reentryAngle["dist"] + "          " 	at (3, 25).
+		print "Best Dist:  " + reentryAngle["bestD"] + "          " at (3, 26).
+		print "Angle:	   " + reentryAngle["ang"] + "           " 	at (3, 27).
+		print "Increment:  " + reentryAngle["inc"] + "           " 	at (3, 28).
+		print "Found?:	   " + reentryAngle["fou"] + "           " 	at (3, 29).
+
+		print "Node Prograde: " + nd:prograde + "                   " 	at (3, 31).
+		print "Node Normal:   " + nd:normal + "                   " 	at (3, 32).
+		print "Node Radial:   " + nd:radialout + "                   " 	at (3, 33).
 		}
-		print "Distance to LZ:            " + round(lzDistCur:mag, 2) + "           " at (3, 28).
-		
-		print "Steering Angle:            " + round(steerAngle, 1) + "     " at (3, 30).
-		
-		print "Impact Velocity            " + round(velImp:mag, 1) + "         " at (3, 33).
 
-		print "Runmode:                   " + runmode + "     " at (3, 36).
-		print "DeltaV remaining:          " + round(boosterDeltaV) + "     " at (3, 37).
-		print "PID loop KP:               " + round(AeroSteeringVel_PID:kp, 2) + "     " at (3, 38).
-		
 		if runmode = 9 {
-			print "Time:                    " + round(landBurnT, 5) + "     " at (3, 42).
+		print "Time:                    " + round(landBurnT, 5) + "     "					at (3, 30).
 			
-			print "Height:                   " + round(landBurnH, 5) + "     " at (3, 46).
+		print "Height:                   " + round(landBurnH, 5) + "     "					at (3, 32).
 			
-			print "landBurnS:                " + round(landBurnS, 2) + "     " at (3, 48).
-			print "landBurnS2:               " + round(landBurnS2, 2) + "     " at (3, 49).
+		print "landBurnS:                " + round(landBurnS, 2) + "     "					at (3, 34).
+		print "landBurnS2:               " + round(landBurnS2, 2) + "     "					at (3, 35).
 		}
 		
 		// ---=== [**START**] [ UPDATING VARIABLES AFTER EVERY ITERATION ] [**START**] ===--- //
 		
 		set pT to mT.
 		set impPosPrev to impPosFut.
-		set oldValue to newValue.
+		set oldValue[0] to newValue[0].
+		set oldValue[1] to newValue[1].
+		set oldValue[2] to newValue[2].
 
 		// ---=== [**END**] [ UPDATING VARIABLES AFTER EVERY ITERATION ] [**END**] ===--- //
 		
