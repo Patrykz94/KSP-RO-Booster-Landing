@@ -5,14 +5,16 @@ GLOBAL vehicle IS LIST(
 						"massTotal", 109990,
 						"massFuel", 109983.794,
 						"gLim", 3,
+						"minThrottle", 0.39,
 						"engines", LIST(LEXICON("isp", 348, "thrust", 934120)),
 						"staging", LEXICON(
 										"shutdownRequired", TRUE,
-										"jettison", FALSE,
+										"jettison", TRUE,
+										"waitBeforeJettison", 2,
 										"ignition", TRUE,
-										"waitBeforeIgnition", 3,
+										"waitBeforeIgnition", 2,
 										"ullage", "rcs",
-										"ullageBurnDuration", 2,
+										"ullageBurnDuration", 4,
 										"postUllageBurn", 2
 										)
 					)
@@ -20,12 +22,11 @@ GLOBAL vehicle IS LIST(
 GLOBAL sequence IS LIST(
 					LEXICON("time", -3, "type", "stage", "message", "Merlin 1D ignition"),
 					LEXICON("time", 0, "type", "stage", "message", "LIFTOFF"),
-					LEXICON("time", 20, "type", "roll", "angle", 0, "message", "Performing roll maneuver"),
-					LEXICON("time", 190, "type", "stage", "message", "Fairing separation")
+					LEXICON("time", 170, "type", "stage", "message", "Fairing separation")
 ).
 GLOBAL controls IS LEXICON(
 					"launchTimeAdvance", 120,
-					"verticalAscentTime", 5,
+					"verticalAscentTime", 6,
 					"pitchOverAngle", 1,
 					"upfgActivation", 152
 ).

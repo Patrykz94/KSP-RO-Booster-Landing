@@ -28,7 +28,6 @@ if not exists(configDir) {
 
 // List of libraries needed for the program to run
 local libList is list( // Add .ks files to the list to be loaded (without extensions)
-	"aero_functions",
 	"lib_navball",
 	"telemetry",
 	"recovery_functions",
@@ -90,7 +89,7 @@ local velImp is 0.
 local boosterDeltaV is 0.
 
 // Offsets
-local lzOffsetDist is 5000.
+local lzOffsetDist is 1000.
 local lzBoosterOffset is 0.
 local lzImpactOffset is 0.
 global landingOffset is 0.
@@ -148,21 +147,12 @@ local vec3 is 0.
 local clearRequired is false.
 local bodyRotation is 360 / body:rotationperiod.
 local tr is addons:tr.
-global lastResponse is lexicon("data", lexicon()).
 
 // Landing parameters
 local landing is readjson(configDir + "landing_config.json").
 local lzPos is 0.
 global lzAlt is 0.
 local landingBurnDeltaV is 0.
-global reentryBurnDeltaV is 0.
-local reentryBurnThr is 60.
-local flipDir is 0.
-local partCount is 0. // Used to determine if upper stage has separated already
-
-// Pattern tracking
-global newValue is list(0,0,0,0).
-global oldValue is list(0,0,0,0).
 
 // Terminal size
 set terminal:width to 60.
@@ -189,19 +179,6 @@ if landing["landing"] { // Getting landing data
 	tr:settarget(lzPos). // Setting target for Trajectories mod
 	set lzAlt to lzPos:terrainheight.
 	when (altCur - lzAlt) < 200 and runmode > 2 then { gear on. } // Setting trigger for landing legs
-}
-
-// Request a lift-off time from Pegas
-if sendMessage("request", "liftoffTime") {
-	when lastResponse["data"]:haskey("liftoffTime") then {
-		set lt to lastResponse["data"]["liftoffTime"].
-		when mT > lT - 15 then {
-			AG9 ON.
-		}
-	}
-} else {
-	errorExit("ERROR: FAILED TO SEND A MESSAGE. CHECK MESSAGE RECEIVER AND TRY AGAIN.").
-	break.
 }
 
 // ---=== [**END**] [ GETTING NECESSARY DATA ] [**END**] ===---
@@ -261,315 +238,26 @@ if landing["landing"] { // If landing is required then proceed with the program 
 		
 		if runmode = 1 // Wait until separation
 		{
-			if mT - lT > 20 {
-				if landing["boostback"] {
-					// Get required deltaV at separation, landing deltaV + reentry deltaV + boostback deltaV
-					local deltaVatSep is landingBurnDeltaV + (ship:velocity:surface:mag/4) + (groundspeed * 1.4).
-					if deltaVatSep > boosterDeltaV - 60 and newValue[0] = 0 {
-						sendMessage("command", list("engineShutdown",
-							"Merlin1D-1", "Merlin1D-2", "Merlin1D-3", "Merlin1D-4", "Merlin1D-5", "Merlin1D-6", "Merlin1D-7", "Merlin1D-8"
-						)).
-						set newValue[0] to 1.
-					}
-					if deltaVatSep > boosterDeltaV - 12 and newValue[0] = 1 { sendMessage("command", list("setThrottle", 0.6, 0.36)). set newValue[0] to 2. }
-					if deltaVatSep > boosterDeltaV - 6 and newValue[0] = 2 { sendMessage("command", list("setThrottle", 0.45, 0.36)). set newValue[0] to 3. }
-					if deltaVatSep > boosterDeltaV - 2 and newValue[0] = 3 { sendMessage("command", list("setThrottle", 0.36, 0.36)). set newValue[0] to 4. }
-					if deltaVatSep > boosterDeltaV and newValue[0] = 4 {
-						local p is list().
-						list parts in p.
-						set partCount to p:length.
-						set runmode to 1.1.
-					}
-				} else {
-					// No-boostback separation code
-					set newValue[0] to landingOffset:mag.
-					// This will need to be developed
-					if newValue[0] > oldValue[0] {
-						local p is list().
-						list parts in p.
-						set partCount to p:length.
-						set runmode to 1.1.
-					}
-				}
-			} else {
-				if landing["boostback"] {
-					set newValue[0] to 0.
-				} else {
-					set newValue[0] to landingOffset:mag. // Tracking changes in distance to target position
-				}
-			}
-		}
-		else if runmode = 1.1 // Send separation request to launch script
-		{			
-			if sendMessage("command", list(list("engineShutdown", "Merlin1D-0"), list("setThrottle", 1, 0.36), list("setUpfgTime"))) {
-				set runmode to 1.2.
-			}
-		}
-		else if runmode = 1.2 // Take control of booster after separation
-		{
-			local p is list().
-			list parts in p.
-			if p:length <> partCount {
-				wait 0.
-				SET CONFIG:IPU TO 2000.
-				lock throttle to max(0, min(1, tval)).
-				set eventTime to mT + 3.
-				set clearRequired to true.
-				rcs on.
-				if landing["boostback"] {
-					set runmode to 2. // Go to boostback
-				} else {
-					set runmode to 3. // Skip boostback and go straight to reentry
-					set flipDir to 180.
-				}
-			}
+			set steer to up.
+			set tval to 1.
+			AG9 on.
+			wait 5.
+			stage.
+			wait 3.
+			stage.
+			set runmode to 2.
 		}
 		else if runmode = 2 // Stabilizing and reorienting for boostback burn [optional]
 		{
-			if mT > eventTime {
-				if stable = false {
-					if stabilize(flipDir) = true {
-						set stable to true.
-					}
-				} else {
-					startFlip(24, flipDir).
-				}
-				if rotCur[0] > 75 {
-					set runmode to 2.1.
-				}
-			} else {
-				stabilize(flipDir).
-			}
-		}
-		else if runmode = 2.1 // Reorienting and proceeding to boostback
-		{
-			if rotCur[0] < 75 {
-				set ship:control:neutralize to true.
-				set stable to false.
-				set steer to lzImpactOffset.
-				lock steering to steer.
-				set engStartup to true.
-				set eventTime to mT + 2.
-				Engine["Throttle"](list(
-					list(Merlin1D_0, 100),
-					list(Merlin1D_1, 100),
-					list(Merlin1D_2, 100)
+			if boosterDeltaV < landingBurnDeltaV {
+				set tval to 0.
+				Engine["Stop"](list(
+					Merlin1D_0
 				)).
-				set runmode to 2.2.
-			} else {
-				if stable = false {
-					if stabilize(flipDir) = true {
-						set stable to true.
-					}
-				} else {
-					startFlip(24).
-				}
-			}
-		}
-		else if runmode = 2.2 // Boostback burn
-		{
-			// The below values need reviewing
-			set steeringmanager:maxstoppingtime to 1.
-			set steeringmanager:rolltorquefactor to 2.
-
-			set newValue[0] to landingOffset:mag. // Tracking changes in distance to target position
-			set newValue[1] to oldValue[0].
-
-			set tval to 1.
-			
-			if engStartup or mT > eventTime { // Start the engines (center first then two side engines)
-				if mT > eventTime {
-					Engine["Start"](list(
-						Merlin1D_0,
-						Merlin1D_1,
-						Merlin1D_2
-					)).
-					set engStartup to false.
-				} else {
-					Engine["Start"](list(
-						Merlin1D_0
-					)).
-					set engStartup to false.
-					set eventTime to mT + 2.
-				}
-			}
-
-			if ullageReq { // If ullage is required, switch RCS on and thrust forward until fuel is settled
-				rcs on.
-				set ship:control:fore to 1.
-				set engStartup to true. // Keep trying to start the engines
-			} else {
-				rcs off.
-				set ship:control:fore to 0.
-				set engStartup to false.
-			}
-
-			if landingOffset:mag > lzOffsetDist * 3 { // If far from target position point in its direction
-				set steer to lookdirup(landingOffset, body:position).
-			} else {
-				if (newValue[0] + newValue[1])/2 > (oldValue[0] + oldValue[1])/2 { // If went past the target position
-					Engine["Stop"](list(
-						Merlin1D_0,
-						Merlin1D_1,
-						Merlin1D_2
-					)).
-					set tval to 0.
-					unlock steering.
-					set runmode to 3.
-				} else { // If close to the target position stop 2 engines and adjust throttle of center engine
-					Engine["Stop"](list(
-						Merlin1D_1,
-						Merlin1D_2
-					)).
-					set Merlin1D_1:gimbal:lock to true.
-					set Merlin1D_2:gimbal:lock to true.
-					set Merlin1D_3:gimbal:lock to true.
-					set Merlin1D_4:gimbal:lock to true.
-					set Merlin1D_5:gimbal:lock to true.
-					set Merlin1D_6:gimbal:lock to true.
-					set Merlin1D_7:gimbal:lock to true.
-					set Merlin1D_8:gimbal:lock to true.
-					Engine["Throttle"](list(
-						list(Merlin1D_0, max(36, min(100, landingOffset:mag/(lzOffsetDist*0.03) )))
-					)).
-				}
-			}
-		}
-		else if runmode = 3 // Reorienting for reentry
-		{
-			rcs on.
-			stabilize(flipDir - 180).
-			set eventTime to mT + 5.
-			set runmode to 3.1.
-			set clearRequired to true.
-		}
-		else if runmode = 3.1
-		{
-			if mT > eventTime {
-				if stable = false {
-					if stabilize(flipDir - 180) = true {
-						set stable to true.
-					}
-				} else {
-					startFlip(1.5, flipDir - 180).
-				}
-				if rotCur[0] > 80 {
+				if verticalspeed < -50 {
 					ag5 on.
-					set runmode to 3.2.
+					set runmode to 8.
 				}
-			} else {
-				stabilize(flipDir - 180).
-			}
-		}
-		else if runmode = 3.2
-		{
-			print "rotCur:    " + round(rotCur[0], 2) + "        " at(3, 40).
-			print "vang:      " + round(90-vang(ship:up:vector, -ship:velocity:surface), 2) + "        " at(3, 41).
-			if rotCur[0] < 90-vang(ship:up:vector, -ship:velocity:surface) {
-				set ship:control:neutralize to true.
-				set stable to false.
-				set steeringmanager:rollts to 15.
-				set steeringmanager:pitchts to 10.
-				set steeringmanager:yawts to 15.
-				set steeringmanager:maxstoppingtime to 0.2. // Steer very gently to save RCS fuel
-				lock steering to steer.
-				set steer to lookdirup(-ship:velocity:surface, ship:facing:topvector).
-				set engStartup to true.
-				set eventTime to mT + 600.
-				if landing["boostback"] {
-					set lzOffsetDist to 500.
-				} else {
-					set lzOffsetDist to 1000.
-				}
-				getReentryAngle("new").
-				when DragForce() > 0.9 then {
-					set nd:eta to 25.
-				}
-				set runmode to 3.3.
-			} else {
-				if stable = false {
-					if stabilize(flipDir - 180) = true {
-						set stable to true.
-					}
-				} else {
-					startFlip(1.5, flipDir - 180).
-				}
-			}
-		}
-		else if runmode = 3.3 // Reentry burn
-		{
-			if reentryBurnDeltaV = 0 {
-				set reentryBurnDeltaV to boosterDeltaV - landingBurnDeltaV.
-			}
-
-			if (nd:eta < 0 and engStartup) or mT > eventTime { // Start the engines (center first then two side engines)
-				if mT > eventTime {
-					Engine["Start"](list(
-						Merlin1D_0,
-						Merlin1D_1,
-						Merlin1D_2
-					)).
-					set engStartup to false.
-				} else {
-					Engine["Start"](list(
-						Merlin1D_0
-					)).
-					set engStartup to false.
-				}
-			}
-
-			if ullageReq { // If ullage is required, switch RCS on and thrust forward until fuel is settled
-				rcs on.
-				set ship:control:fore to 1.
-				set engStartup to true. // Keep trying to start the engines
-			} else {
-				rcs off.
-				set ship:control:fore to 0.
-				set engStartup to false.
-			}
-			
-			if reentryAngle["fou"] {
-				set steer to lookdirup(nd:deltav, ship:facing:topvector).
-				set eventTime to mT + nd:eta + 2.
-				if nd:eta < 0 { // If time for reentry, start the engines
-					set steeringmanager:maxstoppingtime to 2.
-					set tval to 1.
-					if (nd:deltav:mag-100) > 64 {
-						Engine["Throttle"](list(
-							list(Merlin1D_0, reentryBurnThr),
-							list(Merlin1D_1, reentryBurnThr),
-							list(Merlin1D_2, reentryBurnThr)
-						)).
-					} else { // If less than 64m/s maneuver deltav remaining, use only 1 engine
-						Engine["Stop"](list(
-							Merlin1D_1,
-							Merlin1D_2
-						)).
-						Engine["Throttle"](list( // Gradually lower the throttle once burn almost complete
-							list(Merlin1D_0, max(36, min(reentryBurnThr, nd:deltav:mag-64)))
-						)).
-						if (nd:deltav:mag-100) < 0 { // Reentry burn complete
-							Engine["Stop"](list(
-								Merlin1D_0,
-								Merlin1D_1,
-								Merlin1D_2
-							)).
-							set tval to 0.
-							remove nd.
-							set runmode to 8. // Will need to change this number
-						}
-					}
-				}
-			} else {
-				set steer to lookdirup(-ship:velocity:surface, ship:facing:topvector).
-				if vang(-ship:velocity:surface, ship:facing:forevector) < 1.5 { rcs off.} else { rcs on. }
-				if DragForce() > 1 { getReentryAngle(). } // Once drag has at least 1kN of force, create a meneuver node with eta of 25 secods
-			}
-			
-			if shipCurrentTWR() > 0.5 {
-				rcs off.
-			} else if nd:eta < 5 {
-				rcs on.
 			}
 		}
 		else if runmode = 8
@@ -649,7 +337,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 				if shipCurrentTWR() < 1.6 and ship:velocity:surface:mag > 120 { // If TWR over 1.6 or speed below 120m/s then engines have more steering power than aerodynamics
 					set lzImpactOffset to -lzImpactOffset. // If aerodynamics have more steering power, reverse the steering
 				}
-				set steer to lookdirup(rodrigues(-ship:velocity:surface, getNormal(lzImpactOffset, ship:position), steerAngle), ship:facing:topvector).
+				set steer to lookdirup(-ship:velocity:surface, ship:facing:topvector) * angleaxis(steerAngle, lzImpactOffset). // Not sure if this will work correctly, needs testing
 			}
 			
 			if verticalspeed >= 0 {
@@ -683,9 +371,6 @@ if landing["landing"] { // If landing is required then proceed with the program 
 
 		print "Runmode:                   " + runmode + "     "									at (3, 4).
 		print "DeltaV remaining:          " + round(boosterDeltaV) + "     "					at (3, 5).
-
-		print "Drag Force:                " + round(DragForce(),3) + "     "					at (3, 7).
-		print "Terminal Velocity:         " + round(TermVel(ship:altitude),2) + "     "			at (3, 8).
 		
 		print "Impact Time:               " + round(impT, 2) + "     "							at (3, 10).
 		print "Impact Distance:           " + round(lzDistImp:mag, 2) + "          " 			at (3, 11).
@@ -700,21 +385,6 @@ if landing["landing"] { // If landing is required then proceed with the program 
 
 		print "Landing DeltaV:            " + round(landingBurnDeltaV, 1) + "        "			at (3, 21).
 		
-		if runmode = 3.3 {
-		print "Reentry DeltaV:            " + round(reentryBurnDeltaV, 1) + "     "				at (3, 22).
-
-		print "ID:	       " + reentryAngle["id"] + "          " 	at (3, 24).
-		print "Dist:	   " + round(reentryAngle["dist"],1) + "          "	at (3, 25).
-		print "Best Dist:  " + round(reentryAngle["bestD"],1) + "          " at (3, 26).
-		print "Angle:	   " + reentryAngle["ang"] + "           " 	at (3, 27).
-		print "Increment:  " + reentryAngle["inc"] + "           " 	at (3, 28).
-		print "Found?:	   " + reentryAngle["fou"] + "           " 	at (3, 29).
-
-		print "Node Prograde: " + round(nd:prograde,1) + "                   " 	at (3, 31).
-		print "Node Normal:   " + round(nd:normal,1) + "                   " 	at (3, 32).
-		print "Node Radial:   " + round(nd:radialout,1) + "                   " 	at (3, 33).
-		}
-
 		if runmode = 9 {
 		print "Time:                    " + round(landBurnT, 5) + "     "					at (3, 30).
 			
@@ -728,10 +398,6 @@ if landing["landing"] { // If landing is required then proceed with the program 
 		
 		set pT to mT.
 		set impPosPrev to impPosFut.
-		set oldValue[0] to newValue[0].
-		set oldValue[1] to newValue[1].
-		set oldValue[2] to newValue[2].
-		set oldValue[3] to newValue[3].
 
 		// ---=== [**END**] [ UPDATING VARIABLES AFTER EVERY ITERATION ] [**END**] ===--- //
 		

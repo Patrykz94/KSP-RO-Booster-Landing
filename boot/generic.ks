@@ -29,3 +29,8 @@ if volume(1):name = "Falcon9S1" {
 	
 	runpath("1:/pegas.ks").
 }
+else if volume(1):name = "Falcon9S1-Grasshopper" {
+	startScript().
+	copypath("0:/boot/recovery_test.ks","1:").
+	runpath("1:/recovery_test.ks").
+}

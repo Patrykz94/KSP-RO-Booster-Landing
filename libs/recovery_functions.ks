@@ -187,35 +187,73 @@ function getReentryAngle { // Generate a burn vector for reentry burn experiment
 			"id", 0,
 			"dist", 1000000,
 			"ang", 0,
-			"inc", 0.1,
-			"best", v(0,0,0),
-			"bestD", 100000,
+			"inc", 0.5,
+			"best", -velocityat(ship,100):surface,
+			"bestD", 1000000,
 			"fou", false
 			).
-		global nd is node(mT + 25, 0, 0, reentryBurnDeltaV).
+		global nd is node(mT + 100, 0, 0, -100).
+		global bV is -velocityat(ship,100):surface.
 		add nd.
 	} else {
 		if hasnode {
 			if nd:eta < 5 { // At the moment, the script assumes reentry burn only needs to change prograde and radial values and not normal. This will need to be changed
-				local bV is reentryAngle["best"]:normalized * (reentryBurnDeltaV + 100).
-				nodeFromVector(bV, mT + nd:eta). // For steering reasons, the final meneuver node will have 100m/s extra velocity than needed
+				set bV to reentryAngle["best"]:normalized * (reentryBurnDeltaV + 100).
+				nodeFromVector(bV, mT + nd:eta). // For steering reasons, the final meneuver node will have 100m/s more velocity than needed
 				set reentryAngle["fou"] to true.
 			} else {
 				set reentryAngle["id"] to reentryAngle["id"] + 1.
 				if landingOffset:mag > reentryAngle["dist"] {
-					set reentryAngle["inc"] to -reentryAngle["inc"]/10.
+					if reentryAngle["dist"] < 500 {
+						if reentryAngle["inc"] > 0 { set reentryAngle["inc"] to 0.1. } else { set reentryAngle["inc"] to -0.1. }
+						
+					}
+					set reentryAngle["inc"] to -reentryAngle["inc"].
 				}
 				set reentryAngle["dist"] to landingOffset:mag.
 				set reentryAngle["ang"] to reentryAngle["ang"] + reentryAngle["inc"].
 				if reentryAngle["dist"] < reentryAngle["bestD"] {
 					set reentryAngle["bestD"] to reentryAngle["dist"].
-					set reentryAngle["best"] to nd:deltav.
+					set reentryAngle["best"] to bV.
 				}
-				local bV is (lookdirup(nd:deltav, up:vector) * angleaxis(reentryAngle["ang"], landingOffset:normalized)):forevector * reentryBurnDeltaV.
+
+				set bV to rodrigues(-velocityat(ship,nd:eta-1):surface, getNormal(velocityat(ship,nd:eta-1):surface, positionat(ship,nd:eta-1) - body:position), reentryAngle["ang"]):normalized * reentryBurnDeltaV.
 				nodeFromVector(bV, mT + nd:eta).
 			}
 		} else {
 			add nd.
 		}
 	}
+}
+
+function sendMessage {
+	parameter type.
+	parameter data.
+
+	if processor("Falcon9S2"):connection:sendmessage(LEXICON("type", type, "data", data, "sender", CORE:TAG)) {
+		when not core:messages:empty then { set lastResponse to core:messages:pop:content. }
+		return true.
+	}
+	return false.
+}
+
+function getNormal {
+	parameter prog is ship:velocity:surface.
+	parameter pos is ship:position - body:position.
+	return vcrs(prog,pos).
+}
+
+//	Rodrigues vector rotation formula
+function rodrigues {
+	declare parameter inVector.	//	Expects a vector
+	declare parameter axis.		//	Expects a vector
+	declare parameter angle.	//	Expects a scalar
+	
+	set axis to axis:normalized.
+	
+	local outVector is inVector*cos(angle).
+	set outVector to outVector + vcrs(axis, inVector)*sin(angle).
+	set outVector to outVector + axis*vdot(axis, inVector)*(1-cos(angle)).
+	
+	return outVector.
 }
