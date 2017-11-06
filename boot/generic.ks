@@ -1,36 +1,56 @@
-@lazyglobal off.
-function startScript {
-	clearscreen.
-	print "Waiting for instructions. Please update launch/landing parameters and when you are ready, hit '0' (action group).".
-	wait until AG10.
-}
-wait 0.
-set volume(1):name to core:tag.
-if volume(1):name = "Falcon9S1" {
-	startScript().
-	if not exists("1:/recovery.ks") {
-		copypath("0:/boot/recovery.ks","1:").
+//	Boot file decides what programs to load based on CPU name
+@LAZYGLOBAL OFF.
+CLEARSCREEN.
+
+//	Lists of files required for each script
+LOCAL programs IS LEXICON(
+	"recovery", LIST(LIST("recovery", "recovery_functions", "aero_functions", "falcon_rcs", "lib_navball", "telemetry"), LIST("landing_config")),
+	"pegas", LIST(LIST("pegas", "pegas_comm", "pegas_cser", "pegas_misc", "pegas_upfg", "pegas_util"), LIST("Falcon9", "mission"))
+).
+
+FUNCTION checkDiskSpace {
+	PARAMETER programName.
+
+	FUNCTION checkRequiredFiles {
+		PARAMETER programName.
+		LOCAL size IS 0.
+		IF NOT programName = FALSE {
+			IF programs[programName]:LENGTH > 1 {
+				FOR f IN programs[programName][1] {
+					SET size TO size + OPEN("0:/config/" + f + ".ks"):SIZE.
+				}
+			}
+			FOR f IN programs[programName][0] {
+				SET size TO size + OPEN("0:/" + programName + "/" + f + ".ks"):SIZE.
+			}
+		}
+		RETURN size.
 	}
-	set core:bootfilename to recovery.ks.
-	reboot.
-} else if volume(1):name = "Falcon9S2" {
-	startScript().
-	copypath("0:/pegas.ks","1:").
-	copypath("0:/pegas_cser.ks","1:").
-	copypath("0:/pegas_misc.ks","1:").
-	copypath("0:/pegas_upfg.ks","1:").
-	copypath("0:/pegas_util.ks","1:").
 
-	copypath("0:/config/Falcon9.ks","1:").
-	copypath("0:/config/mission.ks","1:").
-
-	runpath("1:/Falcon9.ks").
-	runpath("1:/mission.ks").
-	
-	runpath("1:/pegas.ks").
+	LOCAL space IS VOLUME(1):FREESPACE.
+	LOCAL spaceNeeded IS checkRequiredFiles(programName).
+	LOCAL enoughSpace IS FALSE.
+	IF space > spaceNeeded { SET enoughSpace TO TRUE. }
+	RETURN LIST(enoughSpace, space, spaceNeeded).
 }
-else if volume(1):name = "Falcon9S1-Grasshopper" {
-	startScript().
-	copypath("0:/boot/recovery_test.ks","1:").
-	runpath("1:/recovery_test.ks").
+//	Make sure volume is named correctly
+SET VOLUME(1):NAME TO CORE:TAG.
+LOCAL programName IS FALSE.
+IF VOLUME(1):NAME = "Falcon9S1" { SET programName TO "recovery". }
+ELSE IF VOLUME(1):NAME = "Falcon9S2" { SET programName. }
+LOCAL diskSpace IS checkDiskSpace(programName)[0].
+IF diskSpace[0] {
+	PRINT "Clear to proceed, waiting for instruction.".
+	PRINT "Please hit '0' (action group) when you are ready.".
+	WAIT UNTIL AG10.
+	IF programs[programName]:LENGTH > 1 {
+		FOR f IN programs[programName][1] { COPYPATH("0:/config/" + f + ".ks", "1:"). }
+	}
+	FOR f IN programs[programName][0] { COPYPATH("0:/" + programName + "/" + f + ".ks", "1:"). }
+	IF programName = "recovery" { SET CORE:BOOTFILENAME TO "1:/" + programName + "/" + programName + ".ks". REBOOT. }
+	ELSE IF programName = "pegas" { RUNPATH("1:/pegas.ks"). }
+} ELSE {
+	PRINT "ERROR: Not enough space on " + VOLUME(1):NAME.
+	PRINT "Available space: " + diskSpace[1].
+	PRINT "Required space:  " + diskSpace[2].
 }
