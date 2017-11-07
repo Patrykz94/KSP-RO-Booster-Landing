@@ -4,7 +4,7 @@ CLEARSCREEN.
 
 //	Lists of files required for each script
 LOCAL programs IS LEXICON(
-	"recovery", LIST(LIST("recovery", "recovery_functions", "aero_functions", "falcon_rcs", "lib_navball", "telemetry"), LIST("landing_config")),
+	"recovery", LIST(LIST("recovery", "recovery_functions", "aero_functions", "falcon_rcs", "lib_navball", "telemetry"), LIST("landing")),
 	"pegas", LIST(LIST("pegas", "pegas_comm", "pegas_cser", "pegas_misc", "pegas_upfg", "pegas_util"), LIST("Falcon9", "mission"))
 ).
 
