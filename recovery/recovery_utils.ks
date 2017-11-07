@@ -1,105 +1,118 @@
-// ---=== [**START**] [ DECLARING VARIABLES ] [**START**] ===--- //
-	
-	local Merlin1D_0 is ship:partstagged("Merlin1D-0")[0].
-	local Merlin1D_1 is ship:partstagged("Merlin1D-1")[0].
-	local Merlin1D_2 is ship:partstagged("Merlin1D-2")[0].
-	local Merlin1D_3 is ship:partstagged("Merlin1D-3")[0].
-	local Merlin1D_4 is ship:partstagged("Merlin1D-4")[0].
-	local Merlin1D_5 is ship:partstagged("Merlin1D-5")[0].
-	local Merlin1D_6 is ship:partstagged("Merlin1D-6")[0].
-	local Merlin1D_7 is ship:partstagged("Merlin1D-7")[0].
-	local Merlin1D_8 is ship:partstagged("Merlin1D-8")[0].
-		
-	local ullageReq is false.
-	
-	local merlinData is list( false ).
-	
-// ---=== [**START**] [ DECLARING VARIABLES ] [**START**] ===--- //
+//	Recovery utilities
 
-{ // Falcon Engine Management Functions (FEMF..)
-	
-	function startEngine {
-		parameter engineList.
-		local engineReady is true.
-		
-		for engine in engineList {
-			local eng is engine:getModule("ModuleEnginesRF").
-			if eng:getField("propellant") <> "Very Stable" {
-				set engineReady to false.
-				set ullageReq to true.
+LOCAL ullageReq IS FALSE.
+
+FUNCTION Engines {
+	PARAMETER task, engineList IS LIST(), param IS FALSE.
+
+	IF task:CONTAINS("Engines") {
+		LOCAL engList IS LIST().
+		FOR eng IN vehicle["current"]["engines"]["list"] {
+			FOR e IN SHIP:PARTSTAGGED(eng) {
+				IF engList:LENGTH < landing[task] {
+					engList:ADD(e).
+				}
 			}
 		}
-		
-		if engineReady {
-			set ullageReq to false.
-			for engine in engineList {
-				if engine:ignition = false {
-					engine:activate.
+		RETURN engList.
+	}
+
+	IF engineList:EMPTY {
+		FOR eng IN vehicle["current"]["engines"]["list"] {
+			FOR e IN SHIP:PARTSTAGGED(eng) {
+				engineList:ADD(e).
+			}
+		}
+	}
+
+	FUNCTION start {
+		LOCAL engineReady IS TRUE.
+		FOR e IN engineList {
+			IF NOT e:IGNITION {
+				LOCAL eng IS e:GETMODULE("ModuleEnginesRF").
+				IF eng:GETFIELD("propellant") <> "Very Stable" {
+					SET engineReady TO FALSE.
+					SET ullageReq TO TRUE.
+				}
+			}
+		}
+		IF engineReady {
+			SET ullageReq TO FALSE.
+			FOR e IN engineList {
+				IF e:IGNITION = FALSE {
+					e:ACTIVATE.
 				}
 			}
 		}
 	}
-	
-	function stopEngine {
-		parameter engineList.
-		
-		for engine in engineList {
-			if engine:ignition {
-				engine:shutdown.
+
+	FUNCTION stop {
+		FOR e IN engineList {
+			IF e:IGNITION {
+				e:SHUTDOWN.
 			}
 		}
 	}
-	
-	function setThrottle {
-		parameter engineList.
-		for engine in engineList {
-			local minThrottle is 0.
-			if engine[0]:name = "KK.SPX.Merlin1D+" { set minThrottle to 36. } else { set minThrottle to 39. }
-			set engine[1] to min(100, max(minThrottle, engine[1])).
-			local multiplier is 1 / (1 - (minThrottle * 0.01)).
-			
-			set engine[0]:thrustlimit to (engine[1] * multiplier) - (minThrottle * multiplier).
+
+	//	Expects param to be the throttle value
+	FUNCTION throttle {
+		LOCAL minThrottle IS vehicle["current"]["engines"]["minThrottle"].
+		SET param TO MAX(minThrottle, MIN(1, param)).
+		FOR e IN engineList {
+			SET e:THRUSTLIMIT TO (param - minThrottle) / (1 - minThrottle).
 		}
 	}
-	
-	global Engine is lexicon(
-		"Start", startEngine@,
-		"Stop", stopEngine@,
-		"Throttle", setThrottle@
-	).
+
+	IF task = "start" { start(). }
+	ELSE IF task = "stop" { stop(). }
+	ELSE IF task = "throttle" { throttle(). }
 }
 
-// Falcon Fuel Control Functions (FFCF..)
+FUNCTION Booster {
+	PARAMETER task.
+	PARAMETER param IS FALSE.
 
-{
-	local f9DryMass is 22.9364756622314.
-	local f9tank is ship:partstagged("Falcon9-S1-Tank")[0].
-	
-	function getMass {
-		local totalFuelMass is 0.
-		local f9Dry is f9DryMass.
-		local resources is f9tank:resources.
-		for resource in resources {
-			if resource:name = "Kerosene" or resource:name = "LqdOxygen" {
-				set totalFuelMass to totalFuelMass + (resource:density * resource:amount).
-			} else if resource:name = "Nitrogen" {
-				set f9Dry to f9Dry + (resource:density * resource:amount).
+	LOCAL tank IS SHIP:PARTSTAGGED(vehicle["current"]["fuel"]["tankNametag"]).
+
+	FUNCTION fuelMass {
+		PARAMETER fuelType.
+		IF NOT fuelType:ISTYPE("List") {
+			SET fuelType TO LIST(fuelType).
+		}
+		LOCAL amount IS 0.
+		LOCAL mass IS 0.
+		FOR t IN tank {
+			FOR r IN t:RESOURCES {
+				FOR fuel IN fuelType {
+					IF r:NAME = fuel {
+						SET amount TO amount + r:AMOUNT.
+						SET mass TO mass + (r:AMOUNT * r:DENSITY).
+					}
+				}
 			}
 		}
-		return list(f9Dry, totalFuelMass).
+		RETURN LIST(amount, mass).
 	}
-	
-	function getF9DeltaV {
-		parameter press is ship:sensors:pres * constant:kpatoatm.
-		return Merlin1D_0:ispat(press) * 9.80665 * ln((getMass[0] + getMass[1]) / getMass[0]).
+
+	FUNCTION trueDryMass {
+		LOCAL dryMass IS vehicle["current"]["mass"]["dry"].
+		FOR f IN vehicle["current"]["fuel"]["rcsFuels"] { SET dryMass TO dryMass + fuelMass(f)[1]. }
+		RETURN dryMass.
 	}
-	
-	global Fuel is lexicon(
-		"Stage 1 DeltaV", getF9DeltaV@,
-		"Mass", getMass@
-	).
+
+	FUNCTION deltaV {
+		PARAMETER param IS SHIP:SENSORS:PRES * CONSTANT:KPATOATM.
+		LOCAL e IS SHIP:PARTSTAGGED(vehicle["current"]["engine"]["list"][0])[0].
+		LOCAL dm IS trueDryMass().
+		//	Not 100% sure if 9.80665 should be used
+		RETURN e:ISPAT(press) * 9.80665 * LN((dm + fuelMass(vehicle["current"]["fuel"]["list"])[1] / dm).
+	}
+
+	IF task = "deltaV" { IF param = FALSE { RETURN deltaV(). } ELSE { RETURN deltaV(param). } }
 }
 
+
+//	Need to replace this function
 function landingBurnTime {
 	parameter dv.
 	parameter ensNo is 1.
@@ -147,22 +160,6 @@ function landBurnHeight {
 
 function landBurnSpeed {
 	return -sqrt((altCur - lzAlt)*(2*(ship:velocity:surface:mag/landBurnT - gravity()))).
-}
-
-function configureLandingBurn {
-	if sepDeltaV < 450 {
-		set landBurnEngs to 3.
-		set landBurnThr to 0.55.
-	} else if sepDeltaV < 500 {
-		set landBurnEngs to 1.
-		set landBurnThr to 0.9.
-	} else if sepDeltaV < 550 {
-		set landBurnEngs to 1.
-		set landBurnThr to 0.75.
-	} else {
-		set landBurnEngs to 1.
-		set landBurnThr to 0.6.
-	}
 }
 
 // nodeFromVector function was originally created by reddit user ElWanderer_KSP
