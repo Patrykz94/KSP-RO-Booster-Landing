@@ -20,6 +20,7 @@ GLOBAL vehicle IS LEXICON(
 	"current", vehicle["listOfVessels"]["Falcon 9 FT"],		//	Not sure if this will work?
 	"listOfVessels", LEXICON(
 		"Falcon 9 FT", LEXICON(
+			"pegas_cpu", "Falcon9S2",
 			"aerodynamics", LEXICON(
 				"CdMin", 0.0386,
 				"CdRound2", LEXICON(
