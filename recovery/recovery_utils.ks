@@ -9,6 +9,9 @@ LOCAL RollSpd_PID IS PIDLOOP(0.2, 0, 0.3, -2, 2).
 LOCAL Roll_PID IS PIDLOOP(0.4, 0, 0.3, -1, 1).
 LOCAL Pitch_PID IS PIDLOOP(0.2, 0, 0.2, -2, 2).	//	Changed limits from 0.8. Need to test.
 
+//	landing burn variables
+LOCAL landingBurnData IS LEXICON("speed", LIST(), "altitude", LIST(), "mass", LIST(), "dryMass", 0).
+
 //	Function to get list of engines, start, shutdown or throttle
 FUNCTION Engines {
 	PARAMETER task, engineList IS LIST(), param IS FALSE.
@@ -104,15 +107,26 @@ FUNCTION Booster {
 		RETURN dryMass.
 	}
 
+	//	Maximum DeltaV available in the booster
 	FUNCTION deltaV {
 		PARAMETER param IS SHIP:SENSORS:PRES * CONSTANT:KPATOATM.
-		LOCAL e IS SHIP:PARTSTAGGED(vehicle["current"]["engine"]["list"][0])[0].
+		LOCAL e IS SHIP:PARTSTAGGED(vehicle["current"]["engines"]["list"][0])[0].
 		LOCAL dm IS trueDryMass().
 		//	Not 100% sure if 9.80665 should be used
 		RETURN e:ISPAT(press) * 9.80665 * LN((dm + fuelMass(vehicle["current"]["fuel"]["list"])[1] / dm).
 	}
 
+	//	Mass of fuel required for the certain DeltaV
+	FUNCTION massOfDeltaV {
+		PARAMETER param.
+		LOCAL e IS SHIP:PARTSTAGGED(vehicle["current"]["engines"]["list"][0])[0].
+		LOCAL dm IS trueDryMass().
+		RETURN dm - (dm * (CONSTANT:E * (param / (e:SLISP * 9.80665)))).
+	}
+
 	IF task = "deltaV" { IF param = FALSE { RETURN deltaV(). } ELSE { RETURN deltaV(param). } }
+	ELSE IF task = "dryMass" { RETURN trueDryMass(). }
+	ELSE IF task = "massOfDeltaV" { IF param = FALSE { RETURN 0. } ELSE { RETURN massOfDeltaV(param). } }
 }
 
 //	Controling attitude during flips
@@ -212,6 +226,30 @@ FUNCTION AttitudeControl {
 	IF task = "flip" { flip(param1, param2). }
 	ELSE IF task = "roll" { roll(param1, param2). }
 	ELSE IF task = "stabilize" { stabilize(param1). }
+}
+
+FUNCTION CalculateLandingBurn {
+	PARAMETER param IS 50.
+
+	FUNCTION setUp {
+		SET landingBurnData["dryMass"] TO Booster("dryMass").
+		landingBurnData["speed"]:CLEAR. landingBurnData["speed"]:ADD(0).
+		landingBurnData["altitude"]:CLEAR. landingBurnData["altitude"]:ADD(lzAltitude).
+		landingBurnData["mass"]:CLEAR. landingBurnData["mass"]:ADD(landingBurnData["dryMass"] + Booster("massOfDeltaV", param)).
+	}
+
+	FUNCTION iterate {
+		LOCAL last IS landingBurnData["speed"]LENGTH-1.
+		LOCAL e IS SHIP:PARTSTAGGED(vehicle["current"]["engines"]["list"][0])[0].
+		LOCAL engThrottle IS e:MAXTHRUST * SHIP:PARTSTAGGED(vehicle["current"]["engines"]["list"][0])[0].
+		landingBurnData["speed"]:ADD(landingBurnData["speed"][last]+)
+
+		IF landingBurnData["speed"] > TermVel() { RETURN TRUE. }
+		ELSE { RETURN FALSE. }
+	}
+
+	IF param:ISTYPE("Scalar") { setUp(). }
+	ELSE IF param = "iterate" { RETURN iterate(). }
 }
 
 //	Rodrigues vector rotation formula

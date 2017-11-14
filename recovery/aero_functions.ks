@@ -4,7 +4,7 @@ FUNCTION ATMDens {
 	
 	LOCAL SLDens IS 1.22.
 	LOCAL scaleHeight IS 8500.
-	RETURN SLDens * CONSTANT:e^(-a/scaleHeight).
+	RETURN SLDens * CONSTANT:E^(-a/scaleHeight).
 }
 
 //	Returns drag coefficient. Expects surface velocity as parameter
@@ -32,10 +32,10 @@ FUNCTION DragForce {
 	RETURN (0.5 * d * s^2 * Cd * ar)/1000.
 }
 
-FUNCTION TermVel {
+FUNCTION TerminalVelocity {
 	PARAMETER a IS SHIP:ALTITUDE.
 	LOCAL d IS ATMDens(a).
-	LOCAL g IS gravity(a).
+	LOCAL g IS Gravity(a).
 	LOCAL ar IS vehicle["current"]["aerodynamics"]["surfaceArea"].
 	LOCAL Cd IS DragCoeff().
 	RETURN SQRT((2*(SHIP:MASS*1000)*g)/(d*ar*Cd)).
@@ -49,13 +49,4 @@ FUNCTION landingBurnData {
 	LOCAL acc IS 0.
 	LOCAL dryMass IS Fuel["Mass"][0].
 	LOCAL fuelMass IS Fuel["Mass"][1].
-}
-
-FUNCTION betterTimeTOImpact {
-	PARAMETER alt0.
-	
-	LOCAL d IS 0.
-	LOCAL g IS 0.
-	LOCAL a IS 17.1766.
-	LOCAL Cd IS 1.
 }
