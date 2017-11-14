@@ -1,168 +1,118 @@
-// Initialising the script
-clearscreen.
-set ship:control:pilotmainthrottle to 0.
-wait 0.
+CLEARSCREEN.
+SET SHIP:CONTROL:NEUTRALIZE TO 0.
+SET SHIP:CONTROL:PILOTMAINTHROTTLE TO 0.
 
-// The below will make it possible to exit the program if errors occur
-local once is false.
-until once { // This loop will only work once and breaking it will end the program
-set once to true.
-local error is false.
+//	Loading libraries
+RUNPATH("1:/landing.ks").
+RUNPATH("1:/recovery_utils.ks").
+RUNPATH("1:/aero_functions.ks").
+RUNPATH("1:/lib_navball.ks").
 
-function errorExit {
-	parameter msg is "ERROR: AN ERROR HAS OCCURED".
-	clearscreen.
-	print msg at(3, 5).
+//	If necessary, print an error message and crash the program by trying to use undefined variables.
+FUNCTION ForceCrash {
+	PARAMETER msg.
+	CLEARSCREEN.
+	PRINT " ".
+	PRINT "ERROR!".
+	PRINT " ".
+	PRINT msg.
+	PRINT " ".
+	PRINT "Crashing...".
+	PRINT " ".
+	LOCAL error IS undefinedVariable.
 }
 
-// Setting up storage path and creating necessary directories
-local libsDir is "1:/libs/".
-local configDir is "1:/config/".
-
-if not exists(libsDir) {
-	createdir(libsDir).
-}
-if not exists(configDir) {
-	createdir(configDir).
+IF NOT ADDONS:TR:AVAILABLE {
+	ForceCrash("Trajectories mod not found. Please install Trajectories and try again.").
 }
 
-// List of libraries needed for the program to run
-local libList is list( // Add .ks files to the list to be loaded (without extensions)
-	"aero_functions",
-	"lib_navball",
-	"telemetry",
-	"recovery_functions",
-	"falcon_rcs"
-).
+//	Declare variables
+LOCAL runmode IS 1.
+//	Ship positioning and velocity tracking
+LOCAL currentPosition IS SHIP:GEOPOSITION.
+LOCAL currentAltitude IS SHIP:ALTITUDE:RADAR.
+LOCAL impactPosition IS SHIP:GEOPOSITION.
+LOCAL impactVelcity IS SHIP:VELOCITY:SURFACE.	//	Velocity of impact point, not booster velocity at impact
+LOCAL lzImpactDistance IS 0.
+LOCAL lzCurrentDistance IS 0.
+LOCAL lzPosition IS 0.
+LOCAL boosterDeltaV IS 0.
+LOCAL tr IS ADDONS:TR.
+//	Offsets
+LOCAL lzOffsetDistance IS 3000.
+LOCAL lzBoosterOffset IS 0.
+LOCAL lzImpactOffset IS 0.
+LOCAL landingOffset IS 0.
+//	Steering variables
+LOCAL tval IS 0.
+LOCAL steer IS up.
+LOCAL steerAngle IS 0.
+//	Engine variables
+LOCAL engineReady IS true.
+LOCAL engineStartup IS false.
+LOCAL engineThrust IS 0.
+LOCAL stable IS false.
+//	Time tracking variables
+LOCAL dT IS 0. // Delta time
+LOCAL mT IS time:seconds. // Current time
+LOCAL lT IS time:seconds. // Until/since launch
+LOCAL pT IS mT. // Previous tick time
+LOCAL eventTime IS 0.
+LOCAL event IS false.
+//	Landing burn variables
+LOCAL impactTime IS 0.
 
-// Loading required libraries
-function libDl {
-	parameter libs is list().
-	
-	for lib in libs {
-		if not exists("0:/libs/" + lib + ".ks") {
-			set error to true.
-		}
-	}
-	if not error {
-		for lib in libs {
-			copypath("0:/libs/" + lib + ".ks", libsDir).
-		}
-		for lib in libs {
-			runpath(libsDir + lib + ".ks").
-		}
-	}
-}
 
-libDl(libList).
-// Make sure all libraries were loaded
-if error {
-	errorExit("ERROR: A LIBRARY IS NOT AVAILBLE").
-	break.
-}
 
-// Loading the config file
-if exists("0:/config/landing_config.json") {
-	copypath("0:/config/landing_config.json", configDir).
-} else {
-	errorExit("ERROR: A CONFIG FILE IS NOT AVAILBLE").
-	break.
-}
 
-// ---=== [**START**] [ DECLARING ALL NECESSARY VARIABLES ] [**START**] ===---
+//	ChangeTracking variables
+LOCAL previousPosition IS SHIP:GEOPOSITION.
+LOCAL previousImpactPosition IS SHIP:GEOPOSITION.
 
-// Rocket systems
-local runmode is 1.
-local cpuName is core:tag.
 
-// Ship positioning and velocity tracking
-local posCur is 0.
-local posPrev is ship:geoposition.
-global altCur is 0.
 
-local impPosPrev is ship:geoposition.
-local impPosFut is ship:geoposition.
-local lzDistCur is 0.
-local lzDistImp is 0.
 
-local velImp is 0.
 
-local boosterDeltaV is 0.
-
-// Offsets
-local lzOffsetDist is 5000.
-local lzBoosterOffset is 0.
-local lzImpactOffset is 0.
-global landingOffset is 0.
-
-// Steering variables
-local tval is 0.
-local stable is false.
-
-local steer is up.
-local steerAngle is 0.
-
-local rotCur is 0.
-
-local engReady is true.
-local engStartup is false.
-local engThrust is 0.
-	
 // ---== PREPARING PID LOOPS ==--- //
 
 // Throttle control
-local AltVel_PID is pidloop(0.2, 0, 0.15, -600, 0.1).
-local VelThr_PID is pidloop(2.1, 9, 0.15, 0.36, 1).
+LOCAL AltVel_PID IS pidloop(0.2, 0, 0.15, -600, 0.1).
+LOCAL VelThr_PID IS pidloop(2.1, 9, 0.15, 0.36, 1).
 
 // Aerodynamic steering loops -------==================================<<<<<<<<<<<<<<< Gains need to be properly tuned
-local AeroSteeringVel_PID is pidloop(20, 0, 5, 0, 100).
-local AeroSteering_PID is pidloop(300, 1, 150, -10, 10).
+LOCAL AeroSteeringVel_PID IS pidloop(20, 0, 5, 0, 100).
+LOCAL AeroSteering_PID IS pidloop(300, 1, 150, -10, 10).
 
 // Powered steering loops -----------==================================<<<<<<<<<<<<<<< Gains need to be properly tuned
-local PoweredSteeringVel_PID is pidloop(60, 0, 10, 0, 5).
-local PoweredSteering_PID is pidloop(700, 0, 200, -5, 5).
+LOCAL PoweredSteeringVel_PID IS pidloop(60, 0, 10, 0, 5).
+LOCAL PoweredSteering_PID IS pidloop(700, 0, 200, -5, 5).
 
 // ---== END PID LOOPS ==--- //
 
-// Time tracking
-local dT is 0. // Delta time
-global mT is time:seconds. // Current time
-local lT is time:seconds. // Until/since launch
-local pT is mT. // Previous tick time
-local impT is 0.
-global landBurnT is 0. // Landing burn time
-global landBurnH is 0. // Landing burn height
-global landBurnS is 0. // Landing burn speed target
-local landBurnS2 is 0. // Landing burn speed target (touchdown)
-local landBurnEngs is 0. // Number of ladning engines
-local landBurnThr is 0.
-local eventTime is 0.
-local event is false.
+
 
 // Vectors to be displayed
-local vec1 is 0.
-local vec2 is 0.
-local vec3 is 0.
+LOCAL vec1 IS 0.
+LOCAL vec2 IS 0.
+LOCAL vec3 IS 0.
 
 // Other variables
-local clearRequired is false.
-local bodyRotation is 360 / body:rotationperiod.
-local tr is addons:tr.
-global lastResponse is lexicon("data", lexicon()).
+LOCAL clearRequired IS false.
+LOCAL bodyRotation IS 360 / body:rotationperiod.
+
+LOCAL lastResponse IS lexicon("data", lexicon()).
 
 // Landing parameters
-local landing is readjson(configDir + "landing_config.json").
-local lzPos is 0.
-global lzAlt is 0.
-local landingBurnDeltaV is 0.
-global reentryBurnDeltaV is 0.
-local reentryBurnThr is 60.
-local flipDir is 0.
-local partCount is 0. // Used to determine if upper stage has separated already
+LOCAL lzAlt IS 0.
+LOCAL landingBurnDeltaV IS 0.
+LOCAL reentryBurnDeltaV IS 0.
+LOCAL reentryBurnThr IS 60.
+LOCAL flipDir IS 0.
+LOCAL partCount IS 0. // Used to determine if upper stage has separated already
 
 // Pattern tracking
-global newValue is list(0,0,0,0).
-global oldValue is list(0,0,0,0).
+LOCAL newValue IS list(0,0,0,0).
+LOCAL oldValue IS list(0,0,0,0).
 
 // Terminal size
 set terminal:width to 60.
@@ -206,7 +156,7 @@ if sendMessage("request", "liftoffTime") {
 
 // ---=== [**END**] [ GETTING NECESSARY DATA ] [**END**] ===---
 
-if landing["landing"] { // If landing is required then proceed with the program otherwise end
+if landing["landing"] { // If landing IS required then proceed with the program otherwise end
 	
 	wait 0. // Waiting 1 physics tick so that everything updates
 
@@ -264,7 +214,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 			if mT - lT > 20 {
 				if landing["boostback"] {
 					// Get required deltaV at separation, landing deltaV + reentry deltaV + boostback deltaV
-					local deltaVatSep is landingBurnDeltaV + (ship:velocity:surface:mag/4) + (groundspeed * 1.4).
+					LOCAL deltaVatSep IS landingBurnDeltaV + (ship:velocity:surface:mag/4) + (groundspeed * 1.4).
 					if deltaVatSep > boosterDeltaV - 60 and newValue[0] = 0 {
 						sendMessage("command", list("engineShutdown",
 							"Merlin1D-1", "Merlin1D-2", "Merlin1D-3", "Merlin1D-4", "Merlin1D-5", "Merlin1D-6", "Merlin1D-7", "Merlin1D-8"
@@ -275,7 +225,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 					if deltaVatSep > boosterDeltaV - 6 and newValue[0] = 2 { sendMessage("command", list("setThrottle", 0.45, 0.36)). set newValue[0] to 3. }
 					if deltaVatSep > boosterDeltaV - 2 and newValue[0] = 3 { sendMessage("command", list("setThrottle", 0.36, 0.36)). set newValue[0] to 4. }
 					if deltaVatSep > boosterDeltaV and newValue[0] = 4 {
-						local p is list().
+						LOCAL p IS list().
 						list parts in p.
 						set partCount to p:length.
 						set runmode to 1.1.
@@ -285,7 +235,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 					set newValue[0] to landingOffset:mag.
 					// This will need to be developed
 					if newValue[0] > oldValue[0] {
-						local p is list().
+						LOCAL p IS list().
 						list parts in p.
 						set partCount to p:length.
 						set runmode to 1.1.
@@ -307,7 +257,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 		}
 		else if runmode = 1.2 // Take control of booster after separation
 		{
-			local p is list().
+			LOCAL p IS list().
 			list parts in p.
 			if p:length <> partCount {
 				wait 0.
@@ -394,7 +344,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 				}
 			}
 
-			if ullageReq { // If ullage is required, switch RCS on and thrust forward until fuel is settled
+			if ullageReq { // If ullage IS required, switch RCS on and thrust forward until fuel IS settled
 				rcs on.
 				set ship:control:fore to 1.
 				set engStartup to true. // Keep trying to start the engines
@@ -518,7 +468,7 @@ if landing["landing"] { // If landing is required then proceed with the program 
 				}
 			}
 
-			if ullageReq { // If ullage is required, switch RCS on and thrust forward until fuel is settled
+			if ullageReq { // If ullage IS required, switch RCS on and thrust forward until fuel IS settled
 				rcs on.
 				set ship:control:fore to 1.
 				set engStartup to true. // Keep trying to start the engines
