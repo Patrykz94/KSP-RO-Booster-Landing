@@ -37,18 +37,17 @@ FUNCTION checkDiskSpace {
 SET VOLUME(1):NAME TO CORE:TAG.
 LOCAL programName IS FALSE.
 IF VOLUME(1):NAME = "Falcon9S1" { SET programName TO "recovery". }
-ELSE IF VOLUME(1):NAME = "Falcon9S2" { SET programName. }
-LOCAL diskSpace IS checkDiskSpace(programName)[0].
+ELSE IF VOLUME(1):NAME = "Falcon9S2" { SET programName TO "pegas". }
+LOCAL diskSpace IS checkDiskSpace(programName).
 IF diskSpace[0] {
 	PRINT "Clear to proceed, waiting for instruction.".
 	PRINT "Please hit '0' (action group) when you are ready.".
 	WAIT UNTIL AG10.
 	IF programs[programName]:LENGTH > 1 {
-		FOR f IN programs[programName][1] { COPYPATH("0:/config/" + f + ".ks", "1:"). }
+		FOR f IN programs[programName][1] { COPYPATH("0:/config/" + f + ".ks", "1:/config/" + f + ".ks"). }
 	}
 	FOR f IN programs[programName][0] { COPYPATH("0:/" + programName + "/" + f + ".ks", "1:"). }
-	IF programName = "recovery" { SET CORE:BOOTFILENAME TO "1:/" + programName + "/" + programName + ".ks". REBOOT. }
-	ELSE IF programName = "pegas" { RUNPATH("1:/pegas.ks"). }
+	SET CORE:BOOTFILENAME TO programName + ".ks". REBOOT.
 } ELSE {
 	PRINT "ERROR: Not enough space on " + VOLUME(1):NAME.
 	PRINT "Available space: " + diskSpace[1].
