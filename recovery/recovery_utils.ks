@@ -9,13 +9,17 @@ LOCAL RollSpd_PID IS PIDLOOP(0.2, 0, 0.3, -2, 2).
 LOCAL Roll_PID IS PIDLOOP(0.4, 0, 0.3, -1, 1).
 LOCAL Pitch_PID IS PIDLOOP(0.2, 0, 0.2, -2, 2).	//	Changed limits from 0.8. Need to test.
 
+//	landing burn variables
+LOCAL g0 IS 9.80665.
+LOCAL landingBurnData IS LEXICON("speed", LIST(0), "altitude", LIST(0), "mass", LIST(0), "dryMass", 0, "dvSpent", 0).
+
 //	Function to get list of engines, start, shutdown or throttle
 FUNCTION Engines {
 	PARAMETER task, engineList IS LIST(), param IS FALSE.
 
 	IF task:CONTAINS("Engines") {
 		LOCAL engList IS LIST().
-		FOR eng IN vehicle["current"]["engines"]["list"] {
+		FOR eng IN vehicle["engines"]["list"] {
 			FOR e IN SHIP:PARTSTAGGED(eng) {
 				IF engList:LENGTH < landing[task] {
 					engList:ADD(e).
@@ -26,7 +30,7 @@ FUNCTION Engines {
 	}
 
 	IF engineList:EMPTY {
-		FOR eng IN vehicle["current"]["engines"]["list"] {
+		FOR eng IN vehicle["engines"]["list"] {
 			FOR e IN SHIP:PARTSTAGGED(eng) {
 				engineList:ADD(e).
 			}
@@ -64,7 +68,7 @@ FUNCTION Engines {
 
 	//	Expects param to be the throttle value
 	FUNCTION throttle {
-		LOCAL minThrottle IS vehicle["current"]["engines"]["minThrottle"].
+		LOCAL minThrottle IS vehicle["engines"]["minThrottle"].
 		SET param TO MAX(minThrottle, MIN(1, param)).
 		FOR e IN engineList {
 			SET e:THRUSTLIMIT TO (param - minThrottle) / (1 - minThrottle).
@@ -80,7 +84,7 @@ FUNCTION Engines {
 FUNCTION Booster {
 	PARAMETER task, param IS FALSE.
 
-	LOCAL tank IS SHIP:PARTSTAGGED(vehicle["current"]["fuel"]["tankNametag"]).
+	LOCAL tank IS SHIP:PARTSTAGGED(vehicle["fuel"]["tankNametag"]).
 
 	FUNCTION fuelMass {
 		PARAMETER fuelType.
@@ -99,20 +103,31 @@ FUNCTION Booster {
 	}
 
 	FUNCTION trueDryMass {
-		LOCAL dryMass IS vehicle["current"]["mass"]["dry"].
-		FOR f IN vehicle["current"]["fuel"]["rcsFuels"] { SET dryMass TO dryMass + fuelMass(f)[1]. }
+		LOCAL dryMass IS vehicle["mass"]["dry"].
+		FOR f IN vehicle["fuel"]["rcsFuels"] { SET dryMass TO dryMass + fuelMass(f)[1]. }
 		RETURN dryMass.
 	}
 
+	//	Maximum DeltaV available in the booster
 	FUNCTION deltaV {
 		PARAMETER param IS SHIP:SENSORS:PRES * CONSTANT:KPATOATM.
-		LOCAL e IS SHIP:PARTSTAGGED(vehicle["current"]["engine"]["list"][0])[0].
+		LOCAL e IS SHIP:PARTSTAGGED(vehicle["engines"]["list"][0])[0].
 		LOCAL dm IS trueDryMass().
 		//	Not 100% sure if 9.80665 should be used
-		RETURN e:ISPAT(press) * 9.80665 * LN((dm + fuelMass(vehicle["current"]["fuel"]["list"])[1] / dm).
+		RETURN e:ISPAT(param) * g0 * LN(dm + fuelMass(vehicle["fuel"]["list"])[1] / dm).
+	}
+
+	//	Mass of fuel required for the certain DeltaV
+	FUNCTION massOfDeltaV {
+		PARAMETER param.
+		LOCAL e IS SHIP:PARTSTAGGED(vehicle["engines"]["list"][0])[0].
+		LOCAL dm IS trueDryMass().
+		RETURN dm * (CONSTANT:E * (param / (e:SLISP * g0))).
 	}
 
 	IF task = "deltaV" { IF param = FALSE { RETURN deltaV(). } ELSE { RETURN deltaV(param). } }
+	ELSE IF task = "dryMass" { RETURN trueDryMass(). }
+	ELSE IF task = "massOfDeltaV" { IF param = FALSE { RETURN 0. } ELSE { RETURN massOfDeltaV(param). } }
 }
 
 //	Controling attitude during flips
@@ -162,13 +177,13 @@ FUNCTION AttitudeControl {
 	}
 
 	FUNCTION stabilize {
-		PARAMETER roll.
-		IF roll:ISTYPE("bool") { SET roll TO 0. }
+		PARAMETER rol.
+		IF rol:ISTYPE("bool") { SET rol TO 0. }
 
-		SET roll TO rollConvert(roll).
+		SET rol TO rollConvert(rol).
 		SET SHIP:CONTROL:NEUTRALIZE TO TRUE.
 		IF roll_for(SHIP) > 1 OR roll_for(SHIP) < -1 {
-			roll(roll).
+			roll(rol).
 		} ELSE {
 			killRoll(0.5).
 			killYaw(0.5).
@@ -214,6 +229,70 @@ FUNCTION AttitudeControl {
 	ELSE IF task = "stabilize" { stabilize(param1). }
 }
 
+//	Calculating the landing burn using a reverse-landing simulation
+FUNCTION CalculateLandingBurn {
+	PARAMETER param IS 50.
+
+	LOCAL last IS 0.
+	LOCAL press IS 0.
+	LOCAL engs IS vehicle["engines"].
+	LOCAL e IS SHIP:PARTSTAGGED(engs["list"][0])[0].
+	
+	FUNCTION setUp {
+		SET landingBurnData["dryMass"] TO Booster("dryMass").
+		landingBurnData["speed"]:CLEAR. landingBurnData["speed"]:ADD(0).
+		landingBurnData["altitude"]:CLEAR. landingBurnData["altitude"]:ADD(lzAltitude).
+		landingBurnData["mass"]:CLEAR. landingBurnData["mass"]:ADD(landingBurnData["dryMass"] + Booster("massOfDeltaV", param)).
+		SET landingBurnData["dvSpent"] TO 0.
+	}
+
+	FUNCTION getMaxThrust {
+		PARAMETER p IS press.
+		RETURN engs["maxThrust"]/e:VISP * e:ISPAT(p).
+	}
+
+	FUNCTION getFlow {
+		PARAMETER tval.
+		RETURN tval * getMaxThrust(0) / (e:VISP*g0).
+	}
+
+	FUNCTION getTimeToTermVel {
+		IF last < 1 { RETURN 10. }
+		LOCAL tvel IS TerminalVelocity(landingBurnData["altitude"][last], landingBurnData["mass"][last]*1000, landingBurnData["speed"][last])*1.05.
+		LOCAL acc IS (landingBurnData["speed"][last]-landingBurnData["speed"][last-1])*10.
+		RETURN (tvel - landingBurnData["speed"][last])/acc.
+	}
+
+	FUNCTION iterate {
+		SET last TO landingBurnData["speed"]:LENGTH-1.
+		SET press TO BODY:ATM:ALTITUDEPRESSURE(landingBurnData["altitude"][last]).
+
+		LOCAL tval IS min(engs["minThrottle"] + (last/100), landing["landingThrottle"]).
+		LOCAL numEngs IS 1.
+		IF (landing["landingThrottle"] - engs["minThrottle"]) * 100 > last-5 AND getTimeToTermVel() > 2 {
+			LOCAL numEngs IS landing["landingEngines"].
+		}
+		LOCAL eForce IS getMaxThrust() * tval * numEngs.
+		LOCAL dForce IS DragForce(landingBurnData["altitude"][last], landingBurnData["speed"][last]).
+		LOCAL acc IS (dForce+eForce)/landingBurnData["mass"][last] - Gravity(landingBurnData["altitude"][last]).
+		LOCAL engAcc IS eForce/landingBurnData["mass"][last].
+
+		landingBurnData["speed"]:ADD(landingBurnData["speed"][last] + (acc/10)).
+		landingBurnData["altitude"]:ADD(landingBurnData["altitude"][last] + (landingBurnData["speed"][last+1]/10)).
+		landingBurnData["mass"]:ADD(landingBurnData["mass"][last] + (getFlow(tval)*numEngs)/10).
+		SET landingBurnData["dvSpent"] TO landingBurnData["dvSpent"] + (engAcc/10).
+
+		IF landingBurnData["speed"][last+1] > TerminalVelocity(landingBurnData["altitude"][last+1], landingBurnData["mass"][last+1]*1000, landingBurnData["speed"][last+1])*1.05 { RETURN TRUE. }
+		ELSE { RETURN FALSE. }
+	}
+
+	setUp().
+	LOCAL done IS FALSE.
+	UNTIL done {
+		SET done TO iterate().
+	}
+}
+
 //	Rodrigues vector rotation formula
 FUNCTION Rodrigues {
 	PARAMETER inVector.	//	Expects a vector
@@ -251,7 +330,7 @@ FUNCTION NodeFromVector {
 FUNCTION SendMessage {
 	PARAMETER type.
 	PARAMETER data.
-	PARAMETER cpuName IS vehicle["current"]["pegas_cpu"].
+	PARAMETER cpuName IS vehicle["pegas_cpu"].
 
 	IF PROCESSOR(cpuName):CONNECTION:SENDMESSAGE(LEXICON("type", type, "data", data, "sender", CORE:TAG)) {
 		WHEN NOT CORE:MESSAGES:EMPTY THEN { SET lastResponse TO CORE:MESSAGES:POP:CONTENT. }
@@ -293,103 +372,4 @@ FUNCTION TimeToAltitude {
 		RETURN 0.
 	}
 	RETURN (-VERTICALSPEED - SQRT( verticalspeed^2-(2 * (-Gravity(currentAltitude)) * (currentAltitude - desiredAltitude))) ) /  ((-Gravity(currentAltitude))).
-}
-
-//	----------Below functions haven't been rewritten yet
-
-//	Need to replace this function
-function landingBurnTime {
-	parameter dv.
-	parameter ensNo is 1.
-	parameter thrustL is 1.
-	local ens is list().
-	if ensNo = 1 {
-		set ens to list(Merlin1D_0).
-	} else if ensNo = 3 {
-		set ens to list(Merlin1D_0, Merlin1D_1, Merlin1D_2).
-	}
-	local ens_thrust is 0.
-	local ens_isp is 0.
-	local press is ship:sensors:pres * constant:kpatoatm.
-
-	for en in ens {
-		local cIsp is en:ispat(press).
-		if en:isp = 0 or en:maxthrust = 0 {
-			if merlinData[0] = true {
-				set ens_thrust to ens_thrust + (merlinData[2] / merlinData[4]* cIsp).
-				set ens_isp to ens_isp + cIsp.
-			}
-		} else {
-			set ens_thrust to ens_thrust + en:maxthrust.
-			set ens_isp to ens_isp + en:isp.
-		}
-	}
-
-	if ens_thrust = 0 or ens_isp = 0 {
-		//notify("No engines available!").
-		return 0.
-	} else {
-		local f is ens_thrust * thrustL * 1000. // engine thrust (kg * m/s²)
-		local m is ship:mass * 1000. // starting mass (kg)
-		local e is constant():e. // base of natural log
-		local p is ens_isp/ens:length. // engine isp (s) support to average different isp values
-		local g is ship:orbit:body:mu/ship:obt:body:radius^2. // gravitational acceleration constant (m/s²)
-		
-		return g * m * p * (1 - e^(-dv/(g*p))) / f.
-	}
-}
-
-function landBurnHeight {
-	return (ship:velocity:surface:mag^2 / (2*(ship:velocity:surface:mag/landBurnT - gravity()))).
-}
-
-function landBurnSpeed {
-	return -sqrt((altCur - lzAlt)*(2*(ship:velocity:surface:mag/landBurnT - gravity()))).
-}
-
-function getReentryAngle { // Generate a burn vector for reentry burn experimentaly by checking landing distance and adjusting multiple times
-	parameter lastRun is "old".
-
-	if lastRun = "new" { // Generate a maneuver node and a lexicon for tracking changes every iteration
-		global reentryAngle is lexicon(
-			"id", 0,
-			"dist", 1000000,
-			"ang", 0,
-			"inc", 0.5,
-			"best", -velocityat(ship,100):surface,
-			"bestD", 1000000,
-			"fou", false
-			).
-		global nd is node(mT + 100, 0, 0, -100).
-		global bV is -velocityat(ship,100):surface.
-		add nd.
-	} else {
-		if hasnode {
-			if nd:eta < 5 { // At the moment, the script assumes reentry burn only needs to change prograde and radial values and not normal. This will need to be changed
-				set bV to reentryAngle["best"]:normalized * (reentryBurnDeltaV + 100).
-				nodeFromVector(bV, mT + nd:eta). // For steering reasons, the final meneuver node will have 100m/s more velocity than needed
-				set reentryAngle["fou"] to true.
-			} else {
-				set reentryAngle["id"] to reentryAngle["id"] + 1.
-				if landingOffset:mag > reentryAngle["dist"] {
-					if reentryAngle["dist"] < 500 {
-						if reentryAngle["inc"] > 0 { set reentryAngle["inc"] to 0.1. } else { set reentryAngle["inc"] to -0.1. }
-						
-					}
-					set reentryAngle["inc"] to -reentryAngle["inc"].
-				}
-				set reentryAngle["dist"] to landingOffset:mag.
-				set reentryAngle["ang"] to reentryAngle["ang"] + reentryAngle["inc"].
-				if reentryAngle["dist"] < reentryAngle["bestD"] {
-					set reentryAngle["bestD"] to reentryAngle["dist"].
-					set reentryAngle["best"] to bV.
-				}
-
-				set bV to rodrigues(-velocityat(ship,nd:eta-1):surface, getNormal(velocityat(ship,nd:eta-1):surface, positionat(ship,nd:eta-1) - body:position), reentryAngle["ang"]):normalized * reentryBurnDeltaV.
-				nodeFromVector(bV, mT + nd:eta).
-			}
-		} else {
-			add nd.
-		}
-	}
 }
