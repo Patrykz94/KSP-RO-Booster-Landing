@@ -4,7 +4,7 @@ FUNCTION ATMDens {
 	
 	LOCAL SLDens IS 1.22.
 	LOCAL scaleHeight IS 8500.
-	RETURN SLDens * CONSTANT:e^(-a/scaleHeight).
+	RETURN SLDens * CONSTANT:E^(-a/scaleHeight).
 }
 
 //	Returns drag coefficient. Expects surface velocity as parameter
@@ -13,49 +13,32 @@ FUNCTION DragCoeff {
 	LOCAL m IS ABS(v)/340.29.	//	Mach number
 	LOCAL Cd IS 0.
 	IF ROUND(m,2) < 0.6 {
-		SET Cd TO vehicle["current"]["aerodynamics"]["CdMin"].
+		SET Cd TO vehicle["aerodynamics"]["CdMin"].
 	} ELSE IF ROUND(m,2) >= 0.6 and ROUND(m,2) <= 1.19 {
-		SET Cd TO vehicle["current"]["aerodynamics"]["CdRound2"][m].
+		SET Cd TO vehicle["aerodynamics"]["CdRound2"][ROUND(m,2)].
 	} ELSE IF ROUND(m,1) >= 1.2 and ROUND(m,1) <= 2.4 {
-		SET Cd TO vehicle["current"]["aerodynamics"]["CdRound1"][m].
+		SET Cd TO vehicle["aerodynamics"]["CdRound1"][ROUND(m,1)].
 	} ELSE {
-		SET Cd TO vehicle["current"]["aerodynamics"]["CdMax"](m).
+		SET Cd TO vehicle["aerodynamics"]["CdMax"](m).
 	}
 	RETURN Cd.
 }
 
 FUNCTION DragForce {
-	LOCAL d IS ATMDens(SHIP:ALTITUDE).
-	LOCAL s IS SHIP:VELOCITY:SURFACE:MAG.
-	LOCAL ar IS vehicle["current"]["aerodynamics"]["surfaceArea"].
+	PARAMETER a IS SHIP:ALTITUDE, s IS SHIP:VELOCITY:SURFACE:MAG.
+	LOCAL d IS ATMDens(a).
+	LOCAL ar IS vehicle["aerodynamics"]["surfaceArea"].
 	LOCAL Cd IS DragCoeff(s).
 	RETURN (0.5 * d * s^2 * Cd * ar)/1000.
 }
 
-FUNCTION TermVel {
+FUNCTION TerminalVelocity {
 	PARAMETER a IS SHIP:ALTITUDE.
+	PARAMETER m IS SHIP:MASS * 1000.
+	PARAMETER v IS SHIP:VELOCITY:SURFACE:MAG.
 	LOCAL d IS ATMDens(a).
-	LOCAL g IS gravity(a).
-	LOCAL ar IS vehicle["current"]["aerodynamics"]["surfaceArea"].
-	LOCAL Cd IS DragCoeff().
-	RETURN SQRT((2*(SHIP:MASS*1000)*g)/(d*ar*Cd)).
-}
-
-FUNCTION landingBurnData {
-	PARAMETER vel IS SHIP:VELOCITY:SURFACE.
-	PARAMETER tVel IS termVel().
-	
-	LOCAL t IS 0.
-	LOCAL acc IS 0.
-	LOCAL dryMass IS Fuel["Mass"][0].
-	LOCAL fuelMass IS Fuel["Mass"][1].
-}
-
-FUNCTION betterTimeTOImpact {
-	PARAMETER alt0.
-	
-	LOCAL d IS 0.
-	LOCAL g IS 0.
-	LOCAL a IS 17.1766.
-	LOCAL Cd IS 1.
+	LOCAL g IS Gravity(a).
+	LOCAL ar IS vehicle["aerodynamics"]["surfaceArea"].
+	LOCAL Cd IS DragCoeff(v).
+	RETURN SQRT((2*m*g)/(d*ar*Cd)).
 }
