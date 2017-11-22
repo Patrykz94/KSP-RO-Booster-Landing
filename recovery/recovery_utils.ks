@@ -237,6 +237,7 @@ FUNCTION CalculateLandingBurn {
 	LOCAL press IS 0.
 	LOCAL engs IS vehicle["engines"].
 	LOCAL e IS SHIP:PARTSTAGGED(engs["list"][0])[0].
+	LOCAL touchDownTime IS 30.	//	How many 0.1s of a second should the touchdown take
 	
 	FUNCTION setUp {
 		SET landingBurnData["dryMass"] TO Booster("dryMass").
@@ -267,10 +268,10 @@ FUNCTION CalculateLandingBurn {
 		SET last TO landingBurnData["speed"]:LENGTH-1.
 		SET press TO BODY:ATM:ALTITUDEPRESSURE(landingBurnData["altitude"][last]).
 
-		LOCAL tval IS min(engs["minThrottle"] + (last/100), landing["landingThrottle"]).
+		LOCAL tval IS min(engs["minThrottle"] + (last/(touchDownTime/(landing["landingThrottle"] - engs["minThrottle"]))), landing["landingThrottle"]).
 		LOCAL numEngs IS 1.
-		IF (landing["landingThrottle"] - engs["minThrottle"]) * 100 > last-5 AND getTimeToTermVel() > 2 {
-			LOCAL numEngs IS landing["landingEngines"].
+		IF last > touchDownTime + 5 AND getTimeToTermVel() > 2 {	//	Due to how I calculate terminal velocity, 2 outer engines should start 0.5 seconds after center one, not 2 secods
+			SET numEngs TO landing["landingEngines"].
 		}
 		LOCAL eForce IS getMaxThrust() * tval * numEngs.
 		LOCAL dForce IS DragForce(landingBurnData["altitude"][last], landingBurnData["speed"][last]).
