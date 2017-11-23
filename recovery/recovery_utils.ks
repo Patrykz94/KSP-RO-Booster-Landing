@@ -128,7 +128,7 @@ FUNCTION Booster {
 
 	FUNCTION fuelMass {
 		PARAMETER fuelType.
-		IF NOT fuelType:ISTYPE("List") { SET fuelType TO LIST(fuelType). }
+		IF NOT fuelType:ISTYPE("list") { SET fuelType TO LIST(fuelType). }
 
 		LOCAL amount IS 0.
 		LOCAL mass IS 0.
@@ -154,7 +154,7 @@ FUNCTION Booster {
 		LOCAL e IS SHIP:PARTSTAGGED(vehicle["engines"]["list"][0])[0].
 		LOCAL dm IS trueDryMass().
 		//	Not 100% sure if 9.80665 should be used
-		RETURN e:ISPAT(param) * g0 * LN(dm + fuelMass(vehicle["fuel"]["list"])[1] / dm).
+		RETURN e:ISPAT(param) * g0 * LN((dm + fuelMass(vehicle["fuel"]["fuelNames"])[1]) / dm).
 	}
 
 	//	Mass of fuel required for the certain DeltaV
@@ -162,12 +162,13 @@ FUNCTION Booster {
 		PARAMETER param.
 		LOCAL e IS SHIP:PARTSTAGGED(vehicle["engines"]["list"][0])[0].
 		LOCAL dm IS trueDryMass().
-		RETURN dm * (CONSTANT:E * (param / (e:SLISP * g0))).
+		RETURN (dm * (CONSTANT:E^(param / (e:SLISP * g0)))) - dm.
 	}
 
-	IF task = "deltaV" { IF param = FALSE { RETURN deltaV(). } ELSE { RETURN deltaV(param). } }
+	IF task = "deltaV" { IF param:ISTYPE("boolean") { RETURN deltaV(). } ELSE { RETURN deltaV(param). } }
 	ELSE IF task = "dryMass" { RETURN trueDryMass(). }
-	ELSE IF task = "massOfDeltaV" { IF param = FALSE { RETURN 0. } ELSE { RETURN massOfDeltaV(param). } }
+	ELSE IF task = "massOfDeltaV" { IF param:ISTYPE("boolean") { RETURN 0. } ELSE { RETURN massOfDeltaV(param). } }
+	ELSE IF task = "fuelMass" { IF param:ISTYPE("boolean") { RETURN 0. } ELSE { RETURN fuelMass(param). } }
 }
 
 //	Controling attitude during flips
@@ -189,8 +190,8 @@ FUNCTION AttitudeControl {
 
 	FUNCTION roll {
 		PARAMETER setRoll, force.
-		IF setRoll:ISTYPE("bool") { SET setRoll TO 0. }
-		IF force:ISTYPE("bool") { SET force TO 0. }
+		IF setRoll:ISTYPE("boolean") { SET setRoll TO 0. }
+		IF force:ISTYPE("boolean") { SET force TO 0. }
 
 		SET Roll_PID:MINOUTPUT TO -force.
 		SET Roll_PID:MAXOUTPUT TO force.
@@ -218,7 +219,7 @@ FUNCTION AttitudeControl {
 
 	FUNCTION stabilize {
 		PARAMETER rol.
-		IF rol:ISTYPE("bool") { SET rol TO 0. }
+		IF rol:ISTYPE("boolean") { SET rol TO 0. }
 
 		SET rol TO rollConvert(rol).
 		SET SHIP:CONTROL:NEUTRALIZE TO TRUE.
@@ -237,8 +238,8 @@ FUNCTION AttitudeControl {
 
 	FUNCTION flip {
 		PARAMETER flipSpeed, rollDir.
-		IF flipSpeed:ISTYPE("bool") { SET flipSpeed TO 24. }
-		IF rollDir:ISTYPE("bool") { SET rollDir TO 0. }
+		IF flipSpeed:ISTYPE("boolean") { SET flipSpeed TO 24. }
+		IF rollDir:ISTYPE("boolean") { SET rollDir TO 0. }
 
 		SET rollDir TO rollConvert(rollDir).
 		SET SHIP:CONTROL:NEUTRALIZE TO TRUE.
