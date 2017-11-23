@@ -1,6 +1,6 @@
 //	Recovery utilities
 
-LOCAL ullageReq IS FALSE.
+LOCAL ullageRequired IS FALSE.
 
 //	Variables for controling rcs system during flips
 LOCAL rollAngSpeed IS 600/360.
@@ -19,10 +19,44 @@ FUNCTION Engines {
 
 	IF task:CONTAINS("Engines") {
 		LOCAL engList IS LIST().
-		FOR eng IN vehicle["engines"]["list"] {
-			FOR e IN SHIP:PARTSTAGGED(eng) {
-				IF engList:LENGTH < landing[task] {
+		IF landing:HASKEY(task) {
+			IF task = "sideEngines" {
+				FOR eng IN vehicle["engines"]["list"] {
+					IF engList:LENGTH < landing[task] + landing["centerEngines"] {
+						engList:ADD(SHIP:PARTSTAGGED(eng)[0]).
+					}
+				}
+				LOCAL centerList IS LIST().
+				FOR eng IN vehicle["engines"]["list"] {
+					IF centerList:LENGTH < landing["centerEngines"] {
+						centerList:ADD(SHIP:PARTSTAGGED(eng)[0]).
+					}
+				}
+				LOCAL finalList IS LIST().
+				FOR e IN engList {
+					LOCAL isInCenterList IS FALSE.
+					FOR c IN centerList {
+						IF c = e { SET isInCenterList TO TRUE. }
+					}
+					IF NOT isInCenterList { finalList:ADD(e). }
+				}
+				RETURN finalList.
+			} ELSE {
+				FOR eng IN vehicle["engines"]["list"] {
+					IF engList:LENGTH < landing[task] {
+						engList:ADD(SHIP:PARTSTAGGED(eng)[0]).
+					}
+				}
+			}
+		} ELSE {
+			IF task = "outerEngines" {
+				FROM { LOCAL i IS vehicle["engines"]["list"]:LENGTH-1. } UNTIL i = landing["centerEngines"]-1 STEP { SET i TO i-1. } DO {
+					LOCAL e IS SHIP:PARTSTAGGED(vehicle["engines"]["list"][i])[0].
 					engList:ADD(e).
+				}
+			} ELSE IF task = "allEngines" {
+				FOR eng IN vehicle["engines"]["list"] {
+					engList:ADD(SHIP:PARTSTAGGED(eng)[0]).
 				}
 			}
 		}
@@ -31,9 +65,7 @@ FUNCTION Engines {
 
 	IF engineList:EMPTY {
 		FOR eng IN vehicle["engines"]["list"] {
-			FOR e IN SHIP:PARTSTAGGED(eng) {
-				engineList:ADD(e).
-			}
+			engineList:ADD(SHIP:PARTSTAGGED(eng)[0]).
 		}
 	}
 
@@ -44,12 +76,12 @@ FUNCTION Engines {
 				LOCAL eng IS e:GETMODULE("ModuleEnginesRF").
 				IF eng:GETFIELD("propellant") <> "Very Stable" {
 					SET engineReady TO FALSE.
-					SET ullageReq TO TRUE.
+					SET ullageRequired TO TRUE.
 				}
 			}
 		}
 		IF engineReady {
-			SET ullageReq TO FALSE.
+			SET ullageRequired TO FALSE.
 			FOR e IN engineList {
 				IF e:IGNITION = FALSE {
 					e:ACTIVATE.
@@ -71,13 +103,21 @@ FUNCTION Engines {
 		LOCAL minThrottle IS vehicle["engines"]["minThrottle"].
 		SET param TO MAX(minThrottle, MIN(1, param)).
 		FOR e IN engineList {
-			SET e:THRUSTLIMIT TO (param - minThrottle) / (1 - minThrottle).
+			SET e:THRUSTLIMIT TO ((param - minThrottle) / (1 - minThrottle))*100.
+		}
+	}
+
+	FUNCTION gimbal {
+		IF param { SET param TO FALSE. } ELSE { SET param TO TRUE. }
+		FOR e IN engineList {
+			SET e:GIMBAL:LOCK TO param.
 		}
 	}
 
 	IF task = "start" { start(). }
 	ELSE IF task = "stop" { stop(). }
 	ELSE IF task = "throttle" { throttle(). }
+	ELSE IF task = "gimbal" { gimbal(). }
 }
 
 //	Function for getting deltaV and calculating masses
