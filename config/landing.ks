@@ -14,7 +14,9 @@ GLOBAL landing IS LEXICON(
 	"boostbackThrottle", 1,
 	"reentry", TRUE,
 	"reentryEngines", 3,
-	"reentryThrottle", 0.75
+	"reentryThrottle", 0.75,
+	"centerEngines", 1,
+	"sideEngines", 2
 ).
 
 GLOBAL vessels IS LEXICON(
@@ -48,7 +50,7 @@ GLOBAL vessels IS LEXICON(
 		"fuel", LEXICON(
 			"tankNametag", "Falcon9-S1-Tank",
 			"rcsFuels", LIST("Nitrogen"),
-			"fuelNames", LIST("Kerosense", "LqdOxygen")
+			"fuelNames", LIST("Kerosene", "LqdOxygen")
 		),
 		"engines", LEXICON(
 			"list", LIST("Merlin1D-0", "Merlin1D-1", "Merlin1D-2", "Merlin1D-3", "Merlin1D-4", "Merlin1D-5", "Merlin1D-6", "Merlin1D-7", "Merlin1D-8"),
