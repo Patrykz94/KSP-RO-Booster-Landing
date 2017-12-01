@@ -12,7 +12,6 @@ FUNCTION checkDiskSpace {
 	PARAMETER programName.
 
 	FUNCTION checkRequiredFiles {
-		PARAMETER programName.
 		LOCAL size IS 0.
 		IF NOT programName = FALSE {
 			IF programs[programName]:LENGTH > 1 {
@@ -28,7 +27,7 @@ FUNCTION checkDiskSpace {
 	}
 
 	LOCAL space IS VOLUME(1):FREESPACE.
-	LOCAL spaceNeeded IS checkRequiredFiles(programName).
+	LOCAL spaceNeeded IS checkRequiredFiles().
 	LOCAL enoughSpace IS FALSE.
 	IF space > spaceNeeded { SET enoughSpace TO TRUE. }
 	RETURN LIST(enoughSpace, space, spaceNeeded).
@@ -38,18 +37,22 @@ SET VOLUME(1):NAME TO CORE:TAG.
 LOCAL programName IS FALSE.
 IF VOLUME(1):NAME = "Falcon9S1" { SET programName TO "recovery". }
 ELSE IF VOLUME(1):NAME = "Falcon9S2" { SET programName TO "pegas". }
-LOCAL diskSpace IS checkDiskSpace(programName).
-IF diskSpace[0] {
-	PRINT "Clear to proceed, waiting for instruction.".
-	PRINT "Please hit '0' (action group) when you are ready.".
-	WAIT UNTIL AG10.
-	IF programs[programName]:LENGTH > 1 {
-		FOR f IN programs[programName][1] { COPYPATH("0:/config/" + f + ".ks", "1:/config/" + f + ".ks"). }
-	}
-	FOR f IN programs[programName][0] { COPYPATH("0:/" + programName + "/" + f + ".ks", "1:"). }
-	SET CORE:BOOTFILENAME TO programName + ".ks". REBOOT.
+IF programName:ISTYPE("Boolean") {
+	PRINT "ERROR: No program found for current vessel.".
 } ELSE {
-	PRINT "ERROR: Not enough space on " + VOLUME(1):NAME.
-	PRINT "Available space: " + diskSpace[1].
-	PRINT "Required space:  " + diskSpace[2].
+	LOCAL diskSpace IS checkDiskSpace(programName).
+	IF diskSpace[0] {
+		PRINT "Clear to proceed, waiting for instruction.".
+		PRINT "Please hit '0' (action group) when you are ready.".
+		WAIT UNTIL AG10.
+		IF programs[programName]:LENGTH > 1 {
+			FOR f IN programs[programName][1] { COPYPATH("0:/config/" + f + ".ks", "1:/config/" + f + ".ks"). }
+		}
+		FOR f IN programs[programName][0] { COPYPATH("0:/" + programName + "/" + f + ".ks", "1:"). }
+		SET CORE:BOOTFILENAME TO programName + ".ks". REBOOT.
+	} ELSE {
+		PRINT "ERROR: Not enough space on " + VOLUME(1):NAME.
+		PRINT "Available space: " + diskSpace[1].
+		PRINT "Required space:  " + diskSpace[2].
+	}
 }
