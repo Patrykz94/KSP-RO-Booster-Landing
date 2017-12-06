@@ -13,7 +13,7 @@ LOCAL Pitch_PID IS PIDLOOP(0.2, 0, 0.2, -2, 2).	//	Changed limits from 0.8. Need
 LOCAL g0 IS 9.80665.
 LOCAL landingBurnData IS LEXICON("speed", LIST(0), "altitude", LIST(0), "mass", LIST(0), "dryMass", 0, "dvSpent", 0).
 
-//	Function to get list of engines, start, shutdown or throttle
+//	Function to start, shutdown, throttle or get list of engines
 FUNCTION Engines {
 	PARAMETER task, engineList IS LIST(), param IS FALSE.
 
@@ -335,7 +335,7 @@ FUNCTION CalculateLandingBurn {
 	}
 }
 
-//	Rodrigues vector rotation formula
+//	Rodrigues vector rotation formula - Borrowed from PEGAS
 FUNCTION Rodrigues {
 	PARAMETER inVector.	//	Expects a vector
 	PARAMETER axis.		//	Expects a vector
@@ -356,7 +356,7 @@ FUNCTION GetNormalVec {
 	RETURN VCRS(prog,pos).
 }
 
-// nodeFromVector function was originally created by reddit user ElWanderer_KSP
+// nodeFromVector - originally created by reddit user ElWanderer_KSP
 FUNCTION NodeFromVector {
 	PARAMETER vec, n_time IS TIME:SECONDS.
 
@@ -413,5 +413,127 @@ FUNCTION TimeToAltitude {
 	IF currentAltitude-desiredAltitude <= 0 {
 		RETURN 0.
 	}
-	RETURN (-VERTICALSPEED - SQRT( verticalspeed^2-(2 * (-Gravity(currentAltitude)) * (currentAltitude - desiredAltitude))) ) /  ((-Gravity(currentAltitude))).
+	RETURN (-VERTICALSPEED - SQRT( (verticalspeed*verticalspeed)-(2 * (-Gravity(currentAltitude)) * (currentAltitude - desiredAltitude))) ) /  ((-Gravity(currentAltitude))).
+}
+
+FUNCTION CreateUI {
+	CLEARSCREEN.
+	PRINT ".---------------------------------------------------.".
+	PRINT "| Recovery -                                   v1.1 |".
+	PRINT "|---------------------------------------------------|".
+	PRINT "| Phase                    | Time                 s |".
+	PRINT "|---------------------------------------------------|".
+	PRINT "| TWR              /       | Mass               kg  |".
+	PRINT "| Altitude              km | Velocity           m/s |".
+	PRINT "| Apoapsis              km | Vertical           m/s |".
+	PRINT "| Downrange             km | Horizontal         m/s |".
+	PRINT "| Impact Dist.          km | DeltaV             m/s |".
+	PRINT "| Impact Time           s  | Terminal Vel.      m/s |".
+	PRINT "| LZ Distance           km | Drag Force         kN  |".
+	PRINT "|---------------------------------------------------|".
+	PRINT "|         |                                         |".
+	PRINT "|         |                                         |".
+	PRINT "|         |                                         |".
+	PRINT "|         |                                         |".
+	PRINT "|         |                                         |".
+	PRINT "|         |                                         |".
+	PRINT "'---------------------------------------------------'".
+	
+	PrintValue(SHIP:NAME, 1, 13, 44, "L").
+}
+
+//	Print text at the given place on the screen. Pad and trim when needed. - Borrowed from PEGAS
+FUNCTION PrintValue {
+	PARAMETER val.			//	Message to write (string/scalar)
+	PARAMETER line.			//	Line to write to (scalar)
+	PARAMETER start.		//	First column to write to, inclusive (scalar)
+	PARAMETER end.			//	Last column to write to, exclusive (scalar)
+	PARAMETER align IS "l".	//	Align: "l"eft or "r"ight
+	PARAMETER prec IS 0.	//	Decimal places (scalar)
+	PARAMETER addSpaces IS TRUE.	//	Add spaces between every 3 digits
+
+	LOCAL str IS "".
+	IF val:ISTYPE("scalar") {
+		SET str TO "" + ROUND(val, prec).
+		//	Make sure the number has all the decimal places it needs to have
+		IF prec > 0 {
+			LOCAL hasZeros IS 0.
+			IF str:CONTAINS(".") { SET hasZeros TO str:LENGTH - str:FIND(".") - 1. }
+			ELSE { SET str TO str + ".". }
+			FROM { LOCAL i IS hasZeros. } UNTIL i = prec STEP { SET i TO i + 1. } DO {
+				SET str TO str + "0".
+			}
+		}
+		//	Add a space between each 3 digits
+		IF addSpaces {
+			IF prec > 0 { SET prec TO prec+1. }
+			IF str:LENGTH-prec > 3 {
+				LOCAL addedSpaces IS FLOOR((str:LENGTH-prec-1)/3).
+				LOCAL firstSpaceIndex IS (str:LENGTH-prec) - (addedSpaces*3).
+				LOCAL desiredLength IS str:LENGTH - prec + addedSpaces.
+				FROM { LOCAL i IS firstSpaceIndex. } UNTIL i + 4 >= desiredLength { SET i TO i + 4. } DO {
+					SET str TO str:INSERT(i, " ").
+				}
+			}
+		}
+	} ELSE { SET str TO val. }
+	
+	SET align TO align:TOLOWER().
+	LOCAL flen IS end - start.
+	//	If message is too long to fit in the field - trim, depending on type.
+	IF str:LENGTH>flen {
+		IF align="r" { SET str TO str:SUBSTRING(str:LENGTH-flen, flen). }
+		ELSE IF align="l" { SET str TO str:SUBSTRING(0, flen). }
+	}
+	ELSE {
+		IF align="r" { SET str TO str:PADLEFT(flen). }
+		ELSE IF align="l" { SET str TO str:PADRIGHT(flen). }
+	}
+	PRINT str AT(start, line).
+}
+
+FUNCTION RefreshUI {
+	IF runmode = 0 { PrintValue("Pre-launch", 3, 8, 25, "R"). }
+	ELSE IF runmode = 1 { IF mT - lT > 0 { PrintValue("Ascent (PEGAS)", 3, 8, 25, "R"). } }
+	ELSE IF runmode = 2 { PrintValue("Boostback", 3, 8, 25, "R"). }
+	ELSE IF runmode = 3 { PrintValue("Re-entry", 3, 8, 25, "R"). }
+	ELSE IF runmode = 4 { PrintValue("Landing", 3, 8, 25, "R"). }
+	ELSE IF runmode = 5 { PrintValue("Landed", 3, 8, 25, "R"). }
+	IF mT-lT < 0 { PrintValue("T" + ROUND(mT-lT), 3, 34, 49, "R"). } ELSE { PrintValue("T+" + ROUND(mT-lT), 3, 34, 49, "R"). }
+	PrintValue(ShipCurrentTWR(), 5, 13, 17, "R", 2). PrintValue(ShipTWR(), 5, 21, 25, "R", 2).
+	PrintValue(currentAltitude/1000, 6, 11, 23, "R", 3).
+	PrintValue(SHIP:OBT:APOAPSIS/1000, 7, 11, 23, "R", 3).
+	PrintValue(launchSiteDistance/1000, 8, 12, 23, "R", 3).
+	PrintValue(lzImpactDistance:MAG/1000, 9, 15, 23, "R", 3).
+	PrintValue(impactTime, 10, 14, 23, "R").
+	PrintValue(lzCurrentDistance:MAG/1000, 11, 14, 23, "R", 3).
+	PrintValue(SHIP:MASS*1000, 5, 34, 47, "R").
+	PrintValue(SHIP:VELOCITY:SURFACE:MAG, 6, 38, 47, "R").
+	PrintValue(VERTICALSPEED, 7, 38, 47, "R").
+	PrintValue(GROUNDSPEED, 8, 40, 47, "R").
+	PrintValue(boosterDeltaV, 9, 36, 47, "R").
+	PrintValue(TerminalVelocity(), 10, 43, 47, "R").
+	PrintValue(DragForce(), 11, 40, 47, "R", 1).
+
+	IF UILex["message"]:LENGTH <> UILexLength {
+		UNTIL UILex["message"]:LENGTH <= 6 { UILex["message"]:REMOVE(0). UILex["time"]:REMOVE(0) }
+		SET UILexLength TO UILex["message"]:LENGTH.
+
+		FROM { LOCAL i IS UILexLength-1. LOCAL l IS 0. } UNTIL i = 0 { SET i TO i - 1. SET l TO l + 1. } DO {
+			IF UILex["time"][i] >= lT {
+				PrintValue("T+" + (UILex["time"][i] - lT) + "s", 13 + l, 2, 8, "L").
+			} ELSE {
+				PrintValue("T" + (UILex["time"][i] - lT) + "s", 13 + l, 2, 8, "L").
+			}
+			PrintValue(UILex["message"][i], 13 + l, 12, 50, "L").
+		}
+	}
+}
+
+FUNCTION AddUIMessage {
+	PARAMETER message IS FALSE.
+	IF message:ISTYPE("String") {
+		UILex["time"]:ADD(TIME:SECONDS).
+		UILex["message"]:ADD(message).
+	}
 }
