@@ -13,63 +13,9 @@ LOCAL Pitch_PID IS PIDLOOP(0.2, 0, 0.2, -2, 2).	//	Changed limits from 0.8. Need
 LOCAL g0 IS 9.80665.
 LOCAL landingBurnData IS LEXICON("speed", LIST(0), "altitude", LIST(0), "mass", LIST(0), "dryMass", 0, "dvSpent", 0).
 
-//	Function to start, shutdown, throttle or get list of engines
-FUNCTION Engines {
-	PARAMETER task, engineList IS LIST(), param IS FALSE.
-
-	IF task:CONTAINS("Engines") {
-		LOCAL engList IS LIST().
-		IF landing:HASKEY(task) {
-			IF task = "sideEngines" {
-				FOR eng IN vehicle["engines"]["list"] {
-					IF engList:LENGTH < landing[task] + landing["centerEngines"] {
-						engList:ADD(SHIP:PARTSTAGGED(eng)[0]).
-					}
-				}
-				LOCAL centerList IS LIST().
-				FOR eng IN vehicle["engines"]["list"] {
-					IF centerList:LENGTH < landing["centerEngines"] {
-						centerList:ADD(SHIP:PARTSTAGGED(eng)[0]).
-					}
-				}
-				LOCAL finalList IS LIST().
-				FOR e IN engList {
-					LOCAL isInCenterList IS FALSE.
-					FOR c IN centerList {
-						IF c = e { SET isInCenterList TO TRUE. }
-					}
-					IF NOT isInCenterList { finalList:ADD(e). }
-				}
-				RETURN finalList.
-			} ELSE {
-				FOR eng IN vehicle["engines"]["list"] {
-					IF engList:LENGTH < landing[task] {
-						engList:ADD(SHIP:PARTSTAGGED(eng)[0]).
-					}
-				}
-			}
-		} ELSE {
-			IF task = "outerEngines" {
-				FROM { LOCAL i IS vehicle["engines"]["list"]:LENGTH-1. } UNTIL i = landing["centerEngines"]-1 STEP { SET i TO i-1. } DO {
-					LOCAL e IS SHIP:PARTSTAGGED(vehicle["engines"]["list"][i])[0].
-					engList:ADD(e).
-				}
-			} ELSE IF task = "allEngines" {
-				FOR eng IN vehicle["engines"]["list"] {
-					engList:ADD(SHIP:PARTSTAGGED(eng)[0]).
-				}
-			}
-		}
-		RETURN engList.
-	}
-
-	IF engineList:EMPTY {
-		FOR eng IN vehicle["engines"]["list"] {
-			engineList:ADD(SHIP:PARTSTAGGED(eng)[0]).
-		}
-	}
-
+{	//	Start, shutdown, throttle or get list of engines
 	FUNCTION start {
+		PARAMETER engineList.
 		LOCAL engineReady IS TRUE.
 		FOR e IN engineList {
 			IF NOT e:IGNITION {
@@ -91,6 +37,7 @@ FUNCTION Engines {
 	}
 
 	FUNCTION stop {
+		PARAMETER engineList.
 		FOR e IN engineList {
 			IF e:IGNITION {
 				e:SHUTDOWN.
@@ -100,6 +47,7 @@ FUNCTION Engines {
 
 	//	Expects param to be the throttle value
 	FUNCTION throttle {
+		PARAMETER engineList, param.
 		LOCAL minThrottle IS vehicle["engines"]["minThrottle"].
 		SET param TO MAX(minThrottle, MIN(1, param)).
 		FOR e IN engineList {
@@ -108,22 +56,74 @@ FUNCTION Engines {
 	}
 
 	FUNCTION gimbal {
+		PARAMETER engineList, param.
 		IF param { SET param TO FALSE. } ELSE { SET param TO TRUE. }
 		FOR e IN engineList {
 			SET e:GIMBAL:LOCK TO param.
 		}
 	}
 
-	IF task = "start" { start(). }
-	ELSE IF task = "stop" { stop(). }
-	ELSE IF task = "throttle" { throttle(). }
-	ELSE IF task = "gimbal" { gimbal(). }
+	GLOBAL Engines IS {
+		PARAMETER task, engineList IS LIST(), param IS FALSE.
+
+		IF task:CONTAINS("Engines") {
+			LOCAL engList IS LIST().
+			IF landing:HASKEY(task) {
+				IF task = "sideEngines" {
+					FOR eng IN vehicle["engines"]["list"] {
+						IF engList:LENGTH < landing[task] + landing["centerEngines"] {
+							engList:ADD(SHIP:PARTSTAGGED(eng)[0]).
+						}
+					}
+					LOCAL centerList IS LIST().
+					FOR eng IN vehicle["engines"]["list"] {
+						IF centerList:LENGTH < landing["centerEngines"] {
+							centerList:ADD(SHIP:PARTSTAGGED(eng)[0]).
+						}
+					}
+					LOCAL finalList IS LIST().
+					FOR e IN engList {
+						LOCAL isInCenterList IS FALSE.
+						FOR c IN centerList {
+							IF c = e { SET isInCenterList TO TRUE. }
+						}
+						IF NOT isInCenterList { finalList:ADD(e). }
+					}
+					RETURN finalList.
+				} ELSE {
+					FOR eng IN vehicle["engines"]["list"] {
+						IF engList:LENGTH < landing[task] {
+							engList:ADD(SHIP:PARTSTAGGED(eng)[0]).
+						}
+					}
+				}
+			} ELSE {
+				IF task = "outerEngines" {
+					FROM { LOCAL i IS vehicle["engines"]["list"]:LENGTH-1. } UNTIL i = landing["centerEngines"]-1 STEP { SET i TO i-1. } DO {
+						LOCAL e IS SHIP:PARTSTAGGED(vehicle["engines"]["list"][i])[0].
+						engList:ADD(e).
+					}
+				} ELSE IF task = "allEngines" {
+					FOR eng IN vehicle["engines"]["list"] {
+						engList:ADD(SHIP:PARTSTAGGED(eng)[0]).
+					}
+				}
+			}
+			RETURN engList.
+		} ELSE IF engineList:EMPTY {
+			FOR eng IN vehicle["engines"]["list"] {
+				engineList:ADD(SHIP:PARTSTAGGED(eng)[0]).
+			}
+		}
+
+		IF task = "start" { start(engineList). }
+		ELSE IF task = "stop" { stop(engineList). }
+		ELSE IF task = "throttle" { throttle(engineList, param). }
+		ELSE IF task = "gimbal" { gimbal(engineList, param). }
+	}.
 }
 
-//	Function for getting deltaV and calculating masses
-FUNCTION Booster {
-	PARAMETER task, param IS FALSE.
-
+{	//	Getting deltaV and calculating masses
 	LOCAL tank IS SHIP:PARTSTAGGED(vehicle["fuel"]["tankNametag"]).
 
 	FUNCTION fuelMass {
@@ -165,16 +165,16 @@ FUNCTION Booster {
 		RETURN (dm * (CONSTANT:E^(param / (e:SLISP * g0)))) - dm.
 	}
 
-	IF task = "deltaV" { IF param:ISTYPE("boolean") { RETURN deltaV(). } ELSE { RETURN deltaV(param). } }
-	ELSE IF task = "dryMass" { RETURN trueDryMass(). }
-	ELSE IF task = "massOfDeltaV" { IF param:ISTYPE("boolean") { RETURN 0. } ELSE { RETURN massOfDeltaV(param). } }
-	ELSE IF task = "fuelMass" { IF param:ISTYPE("boolean") { RETURN 0. } ELSE { RETURN fuelMass(param). } }
+	GLOBAL Booster IS {
+		PARAMETER task, param IS FALSE.
+		IF task = "deltaV" { IF param:ISTYPE("boolean") { RETURN deltaV(). } ELSE { RETURN deltaV(param). } }
+		ELSE IF task = "dryMass" { RETURN trueDryMass(). }
+		ELSE IF task = "massOfDeltaV" { IF param:ISTYPE("boolean") { RETURN 0. } ELSE { RETURN massOfDeltaV(param). } }
+		ELSE IF task = "fuelMass" { IF param:ISTYPE("boolean") { RETURN 0. } ELSE { RETURN fuelMass(param). } }
+	}.
 }
 
-//	Controling attitude during flips
-FUNCTION AttitudeControl {
-	PARAMETER task, param1 IS FALSE, param2 IS FALSE.
-
+{	//	Controling attitude during flips
 	FUNCTION circCalc {
 		PARAMETER desC.
 		PARAMETER oldC.
@@ -265,26 +265,21 @@ FUNCTION AttitudeControl {
 		}
 	}
 
-	IF task = "flip" { flip(param1, param2). }
-	ELSE IF task = "roll" { roll(param1, param2). }
-	ELSE IF task = "stabilize" { stabilize(param1). }
+	GLOBAL AttitudeControl IS {
+		PARAMETER task, param1 IS FALSE, param2 IS FALSE.
+		IF task = "flip" { flip(param1, param2). }
+		ELSE IF task = "roll" { roll(param1, param2). }
+		ELSE IF task = "stabilize" { stabilize(param1). }
+	}.
 }
 
-//	Calculating the landing burn using a reverse-landing simulation
-FUNCTION CalculateLandingBurn {
-	PARAMETER param IS 50.
-
-	LOCAL last IS 0.
-	LOCAL press IS 0.
-	LOCAL engs IS vehicle["engines"].
-	LOCAL e IS SHIP:PARTSTAGGED(engs["list"][0])[0].
-	LOCAL touchDownTime IS 30.	//	How many 0.1s of a second should the touchdown take
-	
+{	//	Calculating the landing burn using a reverse-landing simulation
 	FUNCTION setUp {
+		PARAMETER dryDeltaV.
 		SET landingBurnData["dryMass"] TO Booster("dryMass").
 		landingBurnData["speed"]:CLEAR. landingBurnData["speed"]:ADD(0).
 		landingBurnData["altitude"]:CLEAR. landingBurnData["altitude"]:ADD(lzAltitude).
-		landingBurnData["mass"]:CLEAR. landingBurnData["mass"]:ADD(landingBurnData["dryMass"] + Booster("massOfDeltaV", param)).
+		landingBurnData["mass"]:CLEAR. landingBurnData["mass"]:ADD(landingBurnData["dryMass"] + Booster("massOfDeltaV", dryDeltaV)).
 		SET landingBurnData["dvSpent"] TO 0.
 	}
 
@@ -328,11 +323,21 @@ FUNCTION CalculateLandingBurn {
 		ELSE { RETURN FALSE. }
 	}
 
-	setUp().
-	LOCAL done IS FALSE.
-	UNTIL done {
-		SET done TO iterate().
-	}
+	GLOBAL CalculateLandingBurn IS {
+		PARAMETER dryDeltaV IS 50.
+
+		LOCAL last IS 0.
+		LOCAL press IS 0.
+		LOCAL engs IS vehicle["engines"].
+		LOCAL e IS SHIP:PARTSTAGGED(engs["list"][0])[0].
+		LOCAL touchDownTime IS 30.	//	How many 0.1s of a second should the touchdown take
+
+		setUp(dryDeltaV).
+		LOCAL done IS FALSE.
+		UNTIL done {
+			SET done TO iterate().
+		}
+	}.
 }
 
 //	Rodrigues vector rotation formula - Borrowed from PEGAS
