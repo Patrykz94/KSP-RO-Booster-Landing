@@ -6,9 +6,11 @@ LOCAL listOfLocations IS LEXICON(
 
 GLOBAL landing IS LEXICON(
 	"required", TRUE,
-	"landingEngines", 1,
+	"landingEngines", 1,	//	Can be 1 or 3 for Falcon 9
 	"landingThrottle", 0.6,
 	"location", listOfLocations["KSCLaunchPad"],
+	"launchLocation", listOfLocations["KSCLaunchPad"],
+	"launchGLimit", 3,
 	"boostback", TRUE,
 	"boostbackEngines", 3,
 	"boostbackThrottle", 1,
@@ -58,6 +60,10 @@ GLOBAL vessels IS LEXICON(
 			"spoolUpTime", 3,
 			"minThrottle", 0.36,
 			"maxThrust", 914.12
+		),
+		"bottomPart", LEXICON(
+			"name", "Merlin1D-0",
+			"heightOffset", 3.9981
 		)
 	)
 ).
