@@ -269,7 +269,7 @@ LOCAL landingBurnData IS LEXICON("speed", LIST(0), "altitude", LIST(0), "mass", 
 		PARAMETER task, param1 IS FALSE, param2 IS FALSE.
 		IF task = "flip" { flip(param1, param2). }
 		ELSE IF task = "roll" { roll(param1, param2). }
-		ELSE IF task = "stabilize" { stabilize(param1). }
+		ELSE IF task = "stabilize" { RETURN stabilize(param1). }
 	}.
 }
 
@@ -423,6 +423,9 @@ FUNCTION TimeToAltitude {
 
 FUNCTION CreateUI {
 	CLEARSCREEN.
+	SET TERMINAL:WIDTH TO 53.
+	SET TERMINAL:HEIGHT TO 20+20.
+	
 	PRINT ".---------------------------------------------------.".
 	PRINT "| Recovery -                                   v1.1 |".
 	PRINT "|---------------------------------------------------|".
