@@ -192,6 +192,29 @@ FUNCTION Launch {
 
 		} ELSE {
 			//	ASDS landing following a ballistic trajectory. To be completed...
+			// Tracking changes in distance to target position
+			IF NOT currentValues:HASKEY["landingOffset"] { currentValues:ADD("landingOffset", landingOffset:MAG). }
+
+			IF landingOffset:MAG > 20000 {	//	20k value needs to be tested and adjusted if required
+				// If required, send periodic messages to PEGAS with slight course adjustments
+				IF mT > eventTime {
+					LOCAL vx IS VDOT(HEADING(90, 0):VECTOR, landingOffset).
+					LOCAL vy IS VDOT(HEADING(0, 0):VECTOR, landingOffset).
+					LOCAL newHeading IS MOD(ARCTAN2(vx, vy) + 360, 360).
+					SendMessage("command", LIST("setAzimuth", newHeading)).
+					SET eventTime TO mT + 5.
+				}
+			} ELSE {
+				SET shutdownCondition TO { RETURN TRUE. }
+				IF landingOffset:MAG > currentValues["landingOffset"] { // If went past the target position
+					SET separationCondition TO TRUE.
+				} ELSE { // If close to the target position
+					SET throttleCondition TO TRUE.
+					SET engineThrottle TO MAX(0, MIN(1, landingOffset:MAG/10000)).
+				}
+			}
+
+			SET currentValues["landingOffset"] TO landingOffset:MAG.
 		}
 
 		IF currentValues["separationPhase"] = 1 AND shutdownCondition() {
@@ -225,6 +248,7 @@ FUNCTION Launch {
 		LOCAL P IS LIST().
 		LIST PARTS IN P.
 		IF P:LENGTH <> partCount {	//	If number of parts does not equal number of parts before separation, then stage 2 has already separated
+			IF currentValues:HASKEY("landingOffset") { currentValues:REMOVE("landingOffset"). }
 			SET CONFIG:IPU TO 2000.
 			LOCK THROTTLE TO MAX(0, MIN(1, tval)).
 			SET eventTime TO mT + 3.
