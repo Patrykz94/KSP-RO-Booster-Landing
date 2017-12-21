@@ -1,6 +1,9 @@
 //	Landing configuration file
 LOCAL listOfLocations IS LEXICON(
 	"KSCLaunchPad", LATLNG(28.6083859739973, -80.5997467227517),
+	"LZ-1", LATLNG(28.5969262, -80.5971398),
+	"LZ-2", LATLNG(28.5978307, -80.5984175),
+	"LZ-3", LATLNG(28.5960217, -80.5984175),
 	"ASDS_GTO_1", LATLNG(28.1322262, -73.4441595)
 ).
 
@@ -8,7 +11,7 @@ GLOBAL landing IS LEXICON(
 	"required", TRUE,
 	"landingEngines", 1,	//	Can be 1 or 3 for Falcon 9
 	"landingThrottle", 0.6,
-	"location", listOfLocations["KSCLaunchPad"],
+	"location", listOfLocations["LZ-1"],
 	"launchLocation", listOfLocations["KSCLaunchPad"],
 	"launchGLimit", 3,
 	"boostback", TRUE,
