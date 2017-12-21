@@ -12,17 +12,17 @@ GLOBAL vehicle IS LIST(
 										"jettison", TRUE,
 										"waitBeforeJettison", 2,
 										"ignition", TRUE,
-										"waitBeforeIgnition", 2,
+										"waitBeforeIgnition", 0.5,
 										"ullage", "rcs",
-										"ullageBurnDuration", 4,
-										"postUllageBurn", 2
+										"ullageBurnDuration", 1,
+										"postUllageBurn", 1
 										)
 					)
 ).
 GLOBAL sequence IS LIST(
 					LEXICON("time", -3, "type", "stage", "message", "Merlin 1D ignition"),
 					LEXICON("time", 0, "type", "stage", "message", "LIFTOFF"),
-					LEXICON("time", 170, "type", "stage", "message", "Fairing separation")
+					LEXICON("time", 180, "type", "stage", "message", "Fairing separation")
 ).
 GLOBAL controls IS LEXICON(
 					"launchTimeAdvance", 120,
