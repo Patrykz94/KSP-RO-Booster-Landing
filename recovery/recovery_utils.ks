@@ -224,14 +224,18 @@ LOCAL landingBurnData IS LEXICON("speed", LIST(0), "altitude", LIST(0), "mass", 
 		SET rol TO rollConvert(rol).
 		SET SHIP:CONTROL:NEUTRALIZE TO TRUE.
 		IF roll_for(SHIP) > 1 OR roll_for(SHIP) < -1 {
-			roll(rol).
+			roll(rol, 1).
 		} ELSE {
 			killRoll(0.5).
 			killYaw(0.5).
 		}
 		IF ABS(SHIP:ANGULARMOMENTUM:Y) < 1 AND ABS(SHIP:ANGULARMOMENTUM:Z) < 5 {
+			SAS OFF.
 			RETURN TRUE.
 		} ELSE {
+			IF ABS(SHIP:ANGULARMOMENTUM:Y) < 2 AND ABS(SHIP:ANGULARMOMENTUM:Z) < 20 {
+				SAS ON.
+			}
 			RETURN FALSE.
 		}
 	}
@@ -274,6 +278,13 @@ LOCAL landingBurnData IS LEXICON("speed", LIST(0), "altitude", LIST(0), "mass", 
 }
 
 {	//	Calculating the landing burn using a reverse-landing simulation
+	LOCAL IPS IS 10.	//	Iterations per second
+	LOCAL last IS 0.
+	LOCAL press IS 0.
+	LOCAL engs IS vehicle["engines"].
+	LOCAL e IS SHIP:PARTSTAGGED(engs["list"][0])[0].
+	LOCAL touchDownTime IS IPS*3.	//	How many iterations should the touchdown take
+	
 	FUNCTION setUp {
 		PARAMETER dryDeltaV.
 		SET landingBurnData["dryMass"] TO Booster("dryMass").
@@ -306,7 +317,7 @@ LOCAL landingBurnData IS LEXICON("speed", LIST(0), "altitude", LIST(0), "mass", 
 
 		LOCAL tval IS min(engs["minThrottle"] + (last/(touchDownTime/(landing["landingThrottle"] - engs["minThrottle"]))), landing["landingThrottle"]).
 		LOCAL numEngs IS 1.
-		IF last > touchDownTime + 5 AND getTimeToTermVel() > 2 {	//	Due to how I calculate terminal velocity, 2 outer engines should start 0.5 seconds after center one, not 2 secods
+		IF last > touchDownTime + IPS*0.5 AND getTimeToTermVel() > 2 {	//	Due to how I calculate terminal velocity, 2 outer engines should start 0.5 seconds after center one, not 2 secods
 			SET numEngs TO landing["landingEngines"].
 		}
 		LOCAL eForce IS getMaxThrust() * tval * numEngs.
@@ -314,10 +325,10 @@ LOCAL landingBurnData IS LEXICON("speed", LIST(0), "altitude", LIST(0), "mass", 
 		LOCAL acc IS (dForce+eForce)/landingBurnData["mass"][last] - Gravity(landingBurnData["altitude"][last]).
 		LOCAL engAcc IS eForce/landingBurnData["mass"][last].
 
-		landingBurnData["speed"]:ADD(landingBurnData["speed"][last] + (acc/10)).
-		landingBurnData["altitude"]:ADD(landingBurnData["altitude"][last] + (landingBurnData["speed"][last+1]/10)).
-		landingBurnData["mass"]:ADD(landingBurnData["mass"][last] + (getFlow(tval)*numEngs)/10).
-		SET landingBurnData["dvSpent"] TO landingBurnData["dvSpent"] + (engAcc/10).
+		landingBurnData["speed"]:ADD(landingBurnData["speed"][last] + (acc/IPS)).
+		landingBurnData["altitude"]:ADD(landingBurnData["altitude"][last] + (landingBurnData["speed"][last+1]/IPS)).
+		landingBurnData["mass"]:ADD(landingBurnData["mass"][last] + (getFlow(tval)*numEngs)/IPS).
+		SET landingBurnData["dvSpent"] TO landingBurnData["dvSpent"] + (engAcc/IPS).
 
 		IF landingBurnData["speed"][last+1] > TerminalVelocity(landingBurnData["altitude"][last+1], landingBurnData["mass"][last+1]*1000, landingBurnData["speed"][last+1])*1.05 { RETURN TRUE. }
 		ELSE { RETURN FALSE. }
@@ -325,12 +336,6 @@ LOCAL landingBurnData IS LEXICON("speed", LIST(0), "altitude", LIST(0), "mass", 
 
 	GLOBAL CalculateLandingBurn IS {
 		PARAMETER dryDeltaV IS 50.
-
-		LOCAL last IS 0.
-		LOCAL press IS 0.
-		LOCAL engs IS vehicle["engines"].
-		LOCAL e IS SHIP:PARTSTAGGED(engs["list"][0])[0].
-		LOCAL touchDownTime IS 30.	//	How many 0.1s of a second should the touchdown take
 
 		setUp(dryDeltaV).
 		LOCAL done IS FALSE.
@@ -365,7 +370,7 @@ FUNCTION GetNormalVec {
 FUNCTION NodeFromVector {
 	PARAMETER vec, n_time IS TIME:SECONDS.
 
-	LOCAL s_pro IS VELOCITYAT(SHIP,n_time):SURFACE.
+	LOCAL s_pro IS VELOCITYAT(SHIP,n_time):ORBIT.
 	LOCAL s_pos IS POSITIONAT(SHIP,n_time) - BODY:POSITION.
 	LOCAL s_nrm IS VCRS(s_pro,s_pos).
 	LOCAL s_rad IS VCRS(s_nrm,s_pro).
@@ -412,13 +417,13 @@ FUNCTION ShipActiveThrust {
 }
 
 FUNCTION TimeToAltitude {
-	PARAMETER desiredAltitude.
-	PARAMETER currentAltitude.
+	PARAMETER desiredAlt.
+	PARAMETER currentAlt IS currentAltitude.
 	
-	IF currentAltitude-desiredAltitude <= 0 {
+	IF currentAlt-desiredAlt <= 0 {
 		RETURN 0.
 	}
-	RETURN (-VERTICALSPEED - SQRT( (verticalspeed*verticalspeed)-(2 * (-Gravity(currentAltitude)) * (currentAltitude - desiredAltitude))) ) /  ((-Gravity(currentAltitude))).
+	RETURN (-VERTICALSPEED - SQRT( (verticalspeed*verticalspeed)-(2 * (-Gravity(currentAlt)) * (currentAlt - desiredAlt))) ) /  ((-Gravity(currentAlt))).
 }
 
 FUNCTION CreateUI {
@@ -436,7 +441,7 @@ FUNCTION CreateUI {
 	PRINT "| Apoapsis              km | Vertical           m/s |".
 	PRINT "| Downrange             km | Horizontal         m/s |".
 	PRINT "| Impact Dist.          km | DeltaV             m/s |".
-	PRINT "| Impact Time           s  | Terminal Vel.      m/s |".
+	PRINT "| Impact Time           s  | Impact Vel.        m/s |".
 	PRINT "| LZ Distance           km | Drag Force         kN  |".
 	PRINT "|---------------------------------------------------|".
 	PRINT "|         |                                         |".
@@ -479,7 +484,7 @@ FUNCTION PrintValue {
 				LOCAL addedSpaces IS FLOOR((str:LENGTH-prec-1)/3).
 				LOCAL firstSpaceIndex IS (str:LENGTH-prec) - (addedSpaces*3).
 				LOCAL desiredLength IS str:LENGTH - prec + addedSpaces.
-				FROM { LOCAL i IS firstSpaceIndex. } UNTIL i + 4 >= desiredLength { SET i TO i + 4. } DO {
+				FROM { LOCAL i IS firstSpaceIndex. } UNTIL i + 4 >= desiredLength STEP { SET i TO i + 4. } DO {
 					SET str TO str:INSERT(i, " ").
 				}
 			}
@@ -501,37 +506,37 @@ FUNCTION PrintValue {
 }
 
 FUNCTION RefreshUI {
-	IF runmode = 0 { PrintValue("Pre-launch", 3, 8, 25, "R"). }
-	ELSE IF runmode = 1 { IF mT - lT > 0 { PrintValue("Ascent (PEGAS)", 3, 8, 25, "R"). } }
-	ELSE IF runmode = 2 { PrintValue("Boostback", 3, 8, 25, "R"). }
-	ELSE IF runmode = 3 { PrintValue("Re-entry", 3, 8, 25, "R"). }
-	ELSE IF runmode = 4 { PrintValue("Landing", 3, 8, 25, "R"). }
-	ELSE IF runmode = 5 { PrintValue("Landed", 3, 8, 25, "R"). }
-	IF mT-lT < 0 { PrintValue("T" + ROUND(mT-lT), 3, 34, 49, "R"). } ELSE { PrintValue("T+" + ROUND(mT-lT), 3, 34, 49, "R"). }
-	PrintValue(ShipCurrentTWR(), 5, 13, 17, "R", 2). PrintValue(ShipTWR(), 5, 21, 25, "R", 2).
-	PrintValue(currentAltitude/1000, 6, 11, 23, "R", 3).
-	PrintValue(SHIP:OBT:APOAPSIS/1000, 7, 11, 23, "R", 3).
-	PrintValue(launchSiteDistance/1000, 8, 12, 23, "R", 3).
-	PrintValue(lzImpactDistance:MAG/1000, 9, 15, 23, "R", 3).
-	PrintValue(impactTime, 10, 14, 23, "R").
-	PrintValue(lzCurrentDistance:MAG/1000, 11, 14, 23, "R", 3).
-	PrintValue(SHIP:MASS*1000, 5, 34, 47, "R").
-	PrintValue(SHIP:VELOCITY:SURFACE:MAG, 6, 38, 47, "R").
-	PrintValue(VERTICALSPEED, 7, 38, 47, "R").
-	PrintValue(GROUNDSPEED, 8, 40, 47, "R").
-	PrintValue(boosterDeltaV, 9, 36, 47, "R").
-	PrintValue(TerminalVelocity(), 10, 43, 47, "R").
-	PrintValue(DragForce(), 11, 40, 47, "R", 1).
+	IF runmode = 0 { PrintValue("Pre-launch", 3, 8, 26, "R"). }
+	ELSE IF runmode = 1 { IF mT - lT > 0 { PrintValue("Ascent (PEGAS)", 3, 8, 26, "R"). } }
+	ELSE IF runmode = 2 { PrintValue("Boostback", 3, 8, 26, "R"). }
+	ELSE IF runmode = 3 { PrintValue("Re-entry", 3, 8, 26, "R"). }
+	ELSE IF runmode = 4 { PrintValue("Landing", 3, 8, 26, "R"). }
+	ELSE IF runmode = 5 { PrintValue("Landed", 3, 8, 26, "R"). }
+	IF mT-lT < 0 { PrintValue("T" + ROUND(mT-lT), 3, 34, 50, "R"). } ELSE { PrintValue("T+" + ROUND(mT-lT), 3, 34, 50, "R"). }
+	PrintValue(ShipCurrentTWR(), 5, 13, 18, "R", 2). PrintValue(ShipTWR(), 5, 21, 26, "R", 2).
+	PrintValue(currentAltitude/1000, 6, 11, 24, "R", 3).
+	PrintValue(SHIP:OBT:APOAPSIS/1000, 7, 11, 24, "R", 3).
+	PrintValue(launchSiteDistance/1000, 8, 12, 24, "R", 3).
+	PrintValue(lzImpactDistance:MAG/1000, 9, 15, 24, "R", 3).
+	PrintValue(impactTime, 10, 14, 24, "R").
+	PrintValue(lzCurrentDistance:MAG/1000, 11, 14, 24, "R", 3).
+	PrintValue(SHIP:MASS*1000, 5, 34, 48, "R").
+	PrintValue(SHIP:VELOCITY:SURFACE:MAG, 6, 38, 48, "R").
+	PrintValue(VERTICALSPEED, 7, 38, 48, "R").
+	PrintValue(GROUNDSPEED, 8, 40, 48, "R").
+	PrintValue(boosterDeltaV, 9, 36, 48, "R").
+	PrintValue(impactVelocityAvg:MAG, 10, 41, 48, "R").
+	PrintValue(DragForce(), 11, 40, 48, "R", 1).
 
 	IF UILex["message"]:LENGTH <> UILexLength {
-		UNTIL UILex["message"]:LENGTH <= 6 { UILex["message"]:REMOVE(0). UILex["time"]:REMOVE(0) }
+		UNTIL UILex["message"]:LENGTH <= 6 { UILex["message"]:REMOVE(0). UILex["time"]:REMOVE(0). }
 		SET UILexLength TO UILex["message"]:LENGTH.
 
-		FROM { LOCAL i IS UILexLength-1. LOCAL l IS 0. } UNTIL i = 0 { SET i TO i - 1. SET l TO l + 1. } DO {
+		FROM { LOCAL i IS UILexLength-1. LOCAL l IS 0. } UNTIL i = -1 STEP { SET i TO i - 1. SET l TO l + 1. } DO {
 			IF UILex["time"][i] >= lT {
-				PrintValue("T+" + (UILex["time"][i] - lT) + "s", 13 + l, 2, 8, "L").
+				PrintValue("T+" + ROUND(UILex["time"][i] - lT) + "s", 13 + l, 2, 8, "L", 0).
 			} ELSE {
-				PrintValue("T" + (UILex["time"][i] - lT) + "s", 13 + l, 2, 8, "L").
+				PrintValue("T" + ROUND(UILex["time"][i] - lT) + "s", 13 + l, 2, 8, "L", 0).
 			}
 			PrintValue(UILex["message"][i], 13 + l, 12, 50, "L").
 		}
