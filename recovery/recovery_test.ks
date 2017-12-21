@@ -1,412 +1,303 @@
-// Initialising the script
-clearscreen.
-set ship:control:pilotmainthrottle to 0.
-wait 0.
+CLEARSCREEN.
+SET SHIP:CONTROL:PILOTMAINTHROTTLE TO 0.
 
-// The below will make it possible to exit the program if errors occur
-local once is false.
-until once { // This loop will only work once and breaking it will end the program
-set once to true.
-local error is false.
-
-function errorExit {
-	parameter msg is "ERROR: AN ERROR HAS OCCURED".
-	clearscreen.
-	print msg at(3, 5).
+//	If necessary, print an error message and crash the program by trying to use undefined variables.
+FUNCTION ForceCrash {
+	PARAMETER msg.
+	CLEARSCREEN.
+	PRINT " ".
+	PRINT "ERROR!".
+	PRINT " ".
+	PRINT msg.
+	PRINT " ".
+	PRINT "Crashing...".
+	PRINT " ".
+	LOCAL error IS undefinedVariable.
 }
 
-// Setting up storage path and creating necessary directories
-local libsDir is "1:/libs/".
-local configDir is "1:/config/".
-
-if not exists(libsDir) {
-	createdir(libsDir).
-}
-if not exists(configDir) {
-	createdir(configDir).
+IF NOT ADDONS:TR:AVAILABLE {
+	ForceCrash("Trajectories mod not found. Please install Trajectories and try again.").
 }
 
-// List of libraries needed for the program to run
-local libList is list( // Add .ks files to the list to be loaded (without extensions)
-	"lib_navball",
-	"telemetry",
-	"recovery_functions",
-	"falcon_rcs"
-).
+//	Loading libraries and configs
+FOR f IN OPEN("1:/config"):LIST:VALUES {
+	RUNONCEPATH(f).
+}
 
-// Loading required libraries
-function libDl {
-	parameter libs is list().
-	
-	for lib in libs {
-		if not exists("0:/libs/" + lib + ".ks") {
-			set error to true.
-		}
+RUNPATH("1:/recovery_utils.ks").
+RUNPATH("1:/aero_functions.ks").
+RUNPATH("1:/lib_navball.ks").
+
+//	Declare variables
+LOCAL runmode IS 0.		//	Pre-launch
+LOCAL subRunmode IS 0.
+LOCAL currentPosition IS SHIP:GEOPOSITION.
+LOCAL currentAltitude IS 0.
+LOCAL impactPosition IS SHIP:GEOPOSITION.
+LOCAL impactVelocity IS LIST(V(0,0,0), V(0,0,0), V(0,0,0), V(0,0,0), V(0,0,0)).	//	Velocity of impact point, not booster velocity at impact
+LOCAL impactVelocityAvg IS V(0,0,0).
+LOCAL lzImpactDistance IS V(0,0,0).
+LOCAL lzCurrentDistance IS V(0,0,0).
+LOCAL launchSiteDistance IS V(0,0,0).
+LOCAL lzPosition IS V(0,0,0).
+LOCAL lzAltitude IS 0.
+LOCAL boosterDeltaV IS 0.
+LOCAL TR IS ADDONS:TR.
+//	Offsets
+LOCAL lzOffsetDistance IS 3000.
+LOCAL lzBoosterOffset IS V(0,0,0).
+LOCAL lzImpactOffset IS V(0,0,0).
+LOCAL landingOffset IS V(0,0,0).
+//	Steering variables
+LOCAL tval IS 0.
+LOCAL throttleLimit IS 1.
+LOCAL steer IS up.
+LOCAL steerAngle IS 0.
+LOCAL steerAngleMultiplier IS 1.
+//	Engine variables
+LOCAL engineReady IS FALSE.
+LOCAL engineStartup IS FALSE.
+LOCAL engineThrottle IS LIST(1,1,1).
+LOCAL engineThrottleAvg IS 1.
+LOCAL stable IS FALSE.
+//	Time tracking variables
+LOCAL dT IS 0.				//	Delta time
+LOCAL mT IS TIME:SECONDS.	//	Current time
+LOCAL lT IS 0.				//	Until/since launch
+LOCAL pT IS 0.				//	Previous tick time
+LOCAL eventTime IS 0.
+LOCAL event IS FALSE.
+//	Landing burn variables
+LOCAL impactTime IS 0.
+LOCAL landingParam IS 0.
+LOCAL landingSpeed IS 0.
+//	Landing parameters
+LOCAL reentryBurnDeltaV IS 0.
+LOCAL flipDirection IS 0.
+LOCAL flipSpeed IS 24.
+LOCAL partCount IS 0. // Used to determine if upper stage has separated already
+//	Messaging variables
+LOCAL lastResponse IS LEXICON().
+//	Vectors to be displayed
+LOCAL vec1 IS 0.
+LOCAL vec2 IS 0.
+LOCAL vec3 IS 0.
+LOCAL vec4 IS 0.
+//	Other variables
+LOCAL bodyRotation IS 360 / BODY:ROTATIONPERIOD.
+//	Change-tracking variables
+LOCAL previousPosition IS SHIP:GEOPOSITION.
+LOCAL previousImpactPosition IS SHIP:GEOPOSITION.
+LOCAL temporaryValues IS LEXICON().
+//	Throttle control
+LOCAL VelThr_PID IS PIDLOOP(2.1, 9, 0.15, vehicle["engines"]["minThrottle"], 1).
+//	Aerodynamic steering loops
+LOCAL AeroSteeringVel_PID IS PIDLOOP(0.2, 0, 0.1, -100, 100).
+//	Powered steering loops
+LOCAL PoweredSteeringVel_PID IS PIDLOOP(0.1, 0, 0.05, -5, 5).
+
+//	Setting up UI
+LOCAL UILex IS LEXICON("time", LIST(), "message", LIST()).
+LOCAL UILexLength IS 0.
+CreateUI().
+
+//	Landing setup
+IF landing["required"] {
+	SET lzPosition TO landing["location"].
+	TR:SETTARGET(lzPosition).	//	Setting target for Trajectories mod
+	SET lzAltitude TO lzPosition:TERRAINHEIGHT.
+	CalculateLandingBurn(50).	//	Calculate the landing burn details iteratively
+	SET landingParam TO landingBurnData["speed"]:LENGTH-1.
+}
+
+//	A wrapper function that calls all other functions
+FUNCTION Main {
+	UpdateVars("start").
+	IF 		runmode = 0 { Prelaunch().	}
+	ELSE IF runmode = 1 { Launch().		}
+	ELSE IF runmode = 2 { Recovery().	}
+	RefreshUI().
+	UpdateVars("end").
+	IF runmode = 3 { RETURN TRUE. } ELSE { RETURN FALSE. }
+}
+
+//	Updating varibales before and after every iteration
+FUNCTION UpdateVars {
+	PARAMETER type.
+
+	IF type = "start" {
+		SET mT TO TIME:SECONDS.
+		SET dT TO mT - pT.
+		SET currentAltitude TO BODY:ALTITUDEOF(SHIP:PARTSTAGGED(vehicle["bottomPart"]["name"])[0]:position) - vehicle["bottomPart"]["heightOffset"].
+		SET currentPosition to SHIP:GEOPOSITION.
+		SET impactTime to timeToAltitude(lzAltitude, currentAltitude).
+		IF TR:HASIMPACT { SET impactPosition TO TR:IMPACTPOS. }	//	Need to test if else condition is needed
+		SET impactVelocity[4] TO impactVelocity[3]. SET impactVelocity[3] TO impactVelocity[2]. SET impactVelocity[2] TO impactVelocity[1]. SET impactVelocity[1] TO impactVelocity[0].
+		SET impactVelocity[0] TO (impactPosition:ALTITUDEPOSITION(lzAltitude) - previousImpactPosition:ALTITUDEPOSITION(lzAltitude))/dT.	//	Not precise at all. Needs attention
+		SET impactVelocityAvg TO (impactVelocity[0] + impactVelocity[0] + impactVelocity[0] + impactVelocity[0] + impactVelocity[0])/5.
+		SET lzCurrentDistance TO lzPosition:POSITION - SHIP:GEOPOSITION:ALTITUDEPOSITION(lzAltitude).	//	Ship -> LZ
+		SET lzImpactDistance TO lzPosition:POSITION - impactPosition:ALTITUDEPOSITION(lzAltitude).		//	Impact point -> LZ
+		SET boosterDeltaV TO Booster("deltaV").
+		SET lzBoosterOffset TO VXCL(lzCurrentDistance - BODY:POSITION, lzCurrentDistance):NORMALIZED * lzOffsetDistance.	//	Flattened and sized <lzCurrentDistance>
+		SET lzImpactOffset TO VXCL(lzImpactDistance - BODY:POSITION, lzImpactDistance):NORMALIZED * lzOffsetDistance.		//	Flattened and sized <lzImpactDistance>
+		SET landingOffset TO lzPosition:POSITION + lzBoosterOffset - impactPosition:ALTITUDEPOSITION(lzAltitude).			//	Pos behind the LZ to aim at during descent
+		SET launchSiteDistance TO (landing["launchLocation"]:POSITION - SHIP:GEOPOSITION:ALTITUDEPOSITION(lzAltitude)):MAG.	//	Downrange distance
+	} ELSE IF type = "end" {
+		SET pT TO mT.
+		SET previousImpactPosition TO impactPosition.
 	}
-	if not error {
-		for lib in libs {
-			copypath("0:/libs/" + lib + ".ks", libsDir).
-		}
-		for lib in libs {
-			runpath(libsDir + lib + ".ks").
-		}
+}
+
+//	Handles things that happen before launch
+FUNCTION Prelaunch {
+	IF subRunmode = 0 {	//	Wait for response and update lift-off time
+			CORE:PART:CONTROLFROM().
+			SET CONFIG:IPU TO 2000.
+			SET lT TO mT + 5.
+			SET subRunmode TO 1.
+	} ELSE IF subRunmode = 1 {	//	Move strongback at T-15s and go into launch mode
+		IF mT > lT - 10 { SET subRunmode TO 2. Engines("gimbal", Engines("outerEngines"), FALSE). }
+	} ELSE IF subRunmode = 2 {
+		IF mT > lT - 3 { SET subRunmode TO 3. STAGE. LOCK THROTTLE TO tval. LOCK STEERING TO UP. SET tval TO 1. }
+	} ELSE IF subRunmode = 3 {
+		IF mT > lT { SET runmode TO 1. SET subRunmode TO 0. STAGE. }
 	}
 }
 
-libDl(libList).
-// Make sure all libraries were loaded
-if error {
-	errorExit("ERROR: A LIBRARY IS NOT AVAILBLE").
-	break.
-}
-
-// Loading the config file
-if exists("0:/config/landing_config.json") {
-	copypath("0:/config/landing_config.json", configDir).
-} else {
-	errorExit("ERROR: A CONFIG FILE IS NOT AVAILBLE").
-	break.
-}
-
-// ---=== [**START**] [ DECLARING ALL NECESSARY VARIABLES ] [**START**] ===---
-
-// Rocket systems
-local runmode is 1.
-local cpuName is core:tag.
-
-// Ship positioning and velocity tracking
-local posCur is 0.
-local posPrev is ship:geoposition.
-global altCur is 0.
-
-local impPosPrev is ship:geoposition.
-local impPosFut is ship:geoposition.
-local lzDistCur is 0.
-local lzDistImp is 0.
-
-local velImp is 0.
-
-local boosterDeltaV is 0.
-
-// Offsets
-local lzOffsetDist is 1000.
-local lzBoosterOffset is 0.
-local lzImpactOffset is 0.
-global landingOffset is 0.
-
-// Steering variables
-local tval is 0.
-local stable is false.
-
-local steer is up.
-local steerAngle is 0.
-
-local rotCur is 0.
-
-local engReady is true.
-local engStartup is false.
-local engThrust is 0.
-	
-// ---== PREPARING PID LOOPS ==--- //
-
-// Throttle control
-local AltVel_PID is pidloop(0.2, 0, 0.15, -600, 0.1).
-local VelThr_PID is pidloop(2.1, 9, 0.15, 0.36, 1).
-
-// Aerodynamic steering loops -------==================================<<<<<<<<<<<<<<< Gains need to be properly tuned
-local AeroSteeringVel_PID is pidloop(20, 0, 5, 0, 100).
-local AeroSteering_PID is pidloop(300, 1, 150, -10, 10).
-
-// Powered steering loops -----------==================================<<<<<<<<<<<<<<< Gains need to be properly tuned
-local PoweredSteeringVel_PID is pidloop(60, 0, 10, 0, 5).
-local PoweredSteering_PID is pidloop(700, 0, 200, -5, 5).
-
-// ---== END PID LOOPS ==--- //
-
-// Time tracking
-local dT is 0. // Delta time
-global mT is time:seconds. // Current time
-local lT is time:seconds. // Until/since launch
-local pT is mT. // Previous tick time
-local impT is 0.
-global landBurnT is 0. // Landing burn time
-global landBurnH is 0. // Landing burn height
-global landBurnS is 0. // Landing burn speed target
-local landBurnS2 is 0. // Landing burn speed target (touchdown)
-local landBurnEngs is 0. // Number of ladning engines
-local landBurnThr is 0.
-local eventTime is 0.
-local event is false.
-
-// Vectors to be displayed
-local vec1 is 0.
-local vec2 is 0.
-local vec3 is 0.
-
-// Other variables
-local clearRequired is false.
-local bodyRotation is 360 / body:rotationperiod.
-local tr is addons:tr.
-
-// Landing parameters
-local landing is readjson(configDir + "landing_config.json").
-local lzPos is 0.
-global lzAlt is 0.
-local landingBurnDeltaV is 0.
-
-// Terminal size
-set terminal:width to 60.
-set terminal:height to 50.
-
-// ---=== [**END**] [ DECLARING ALL NECESSARY VARIABLES ] [**END**] ===---
-
-// ---=== [**START**] [ GETTING NECESSARY DATA ] [**START**] ===---
-
-if landing["landing"] { // Getting landing data
-	for loc in landing["list_of_locations"] {
-		if loc["name"] = landing["landing_location"] {
-			set lzPos to latlng(loc["lat"], loc["lng"]).
-			break.
-		}
+//	Handles things that happen during launch
+FUNCTION Launch {
+	IF ShipTWR() > 0 {
+		SET throttleLimit TO MIN(1, MAX(vehicle["engines"]["minThrottle"], 1.2/ShipTWR())).
+		Engines("throttle", Engines("centerEngines"), throttleLimit).
 	}
-	set landBurnEngs to landing["engines"].
-	set landBurnThr to landing["throttle"].
-	if lzPos = 0 {
-		errorExit("ERROR: LANDING REQUIRED BUT NO LOCATION SELECTED").
-		break.
+
+	IF subRunmode = 0 {
+		LOCAL shutdownCondition IS FALSE.
+		LOCAL deltaVatSep IS landingBurnData["dvSpent"].
+		SET shutdownCondition TO { RETURN deltaVatSep > boosterDeltaV - 30. }.
+
+		IF shutdownCondition() {
+			Engines("stop", Engines("allEngines")).
+			SET subRunmode TO 1.
+			RCS ON.
+			SET STEERINGMANAGER:MAXSTOPPINGTIME TO 0.5.
+			SET STEERINGMANAGER:ROLLTS TO 40.
+			SET STEERINGMANAGER:PITCHTS TO 100.
+			SET STEERINGMANAGER:YAWTS TO 100.
+			//SET STEERINGMANAGER:SHOWFACINGVECTORS TO TRUE.
+			//SET STEERINGMANAGER:SHOWANGULARVECTORS TO TRUE.
+		}
+	} ELSE IF subRunmode = 1 {
+		IF VERTICALSPEED < -120 { AG5 ON. SET subRunmode TO 2. }
+	} ELSE IF subRunmode = 2 {
+		LOCK THROTTLE TO MAX(0, MIN(1, tval)).
+		SET runmode TO 2.
+		SET subRunmode TO 0.
+		LOCK STEERING TO steer.
+		STEERINGMANAGER:RESETTODEFAULT().
 	}
-	set landingBurnDeltaV to (1/(landBurnThr + (landBurnEngs-1) * landBurnThr * 0.75) - 0.5) * 155 + 350. // Temporary formula
-	tr:settarget(lzPos). // Setting target for Trajectories mod
-	set lzAlt to lzPos:terrainheight.
-	when (altCur - lzAlt) < 200 and runmode > 2 then { gear on. } // Setting trigger for landing legs
 }
 
-// ---=== [**END**] [ GETTING NECESSARY DATA ] [**END**] ===---
+//	Handles the landing procedure
+FUNCTION Recovery {
+	SET lzOffsetDistance TO MIN(500, lzCurrentDistance:MAG/3).
+	SET steerAngleMultiplier TO MAX(0.5, MIN(20, ((currentAltitude-lzAltitude)/-VERTICALSPEED)/2)).
+	//	Change the way of steering depending on wheter engines are running or not
+	IF ShipCurrentTWR() < 2 AND SHIP:VELOCITY:SURFACE:MAG > 120 {
+		SET AeroSteeringVel_PID:SETPOINT TO 0.
+		SET steerAngle TO MAX(-10, MIN(10, AeroSteeringVel_PID:UPDATE(mT, (landingOffset + lzImpactDistance):MAG)/steerAngleMultiplier)).
+		PRINT "Aero V:    " + AeroSteeringVel_PID + "                              " AT (3, 31).
+		PRINT "Aero:      " + steerAngleMultiplier + "                              " AT (3, 34).
+	} ELSE {
+		SET PoweredSteeringVel_PID:SETPOINT TO 0.
+		SET steerAngle TO MAX(-5, MIN(5, PoweredSteeringVel_PID:UPDATE(mT, (landingOffset + lzImpactDistance):MAG)/steerAngleMultiplier)).
+		PRINT "Powered V: " + PoweredSteeringVel_PID + "                              " AT (3, 31).
+		PRINT "Powered:   " + steerAngleMultiplier + "                              " AT (3, 34).
+	}
+	IF currentAltitude < lzAltitude + 20 OR VERTICALSPEED > 0 {
+		SET steer TO LOOKDIRUP(-BODY:POSITION, SHIP:FACING:TOPVECTOR).
+	} ELSE {
+		IF ShipCurrentTWR() > 2 AND SHIP:VELOCITY:SURFACE:MAG < 120 { SET steerAngle TO -steerAngle. }
+		SET steer TO LOOKDIRUP(RODRIGUES(-SHIP:VELOCITY:SURFACE, GetNormalVec(landingOffset, impactPosition:POSITION + landingOffset), steerAngle), SHIP:FACING:TOPVECTOR).
+		
+		//	Debug line
+		PRINT "Steering angle:  " + ROUND(steerAngle, 3) + "        " AT (3, 22).
+	}
 
-if landing["landing"] { // If landing is required then proceed with the program otherwise end
-	
-	wait 0. // Waiting 1 physics tick so that everything updates
+	IF currentAltitude < landingBurnData["altitude"][landingParam] {
+		UNTIL currentAltitude >= landingBurnData["altitude"][landingParam] {
+			IF landingParam	> 1 {
+				SET landingParam TO landingParam -1.
+			} ELSE { BREAK. }
+		}
+		SET landingParam TO landingParam -1.
+	}
+	PRINT "Landing param:   " + landingParam + "     " AT (3,25).
+	//IF landingParam < landingBurnData["altitude"]:LENGTH-1 {
+	//	//	May not even need the code below, need to test and see if any significant precision is gained
+	//	LOCAL speedMultiplier IS (currentAltitude - landingBurnData["altitude"][landingParam])/(landingBurnData["altitude"][landingParam+1] - landingBurnData["altitude"][landingParam]).
+	//	SET landingSpeed TO landingBurnData["speed"][landingParam] + (landingBurnData["speed"][landingParam+1] - landingBurnData["speed"][landingParam]) * speedMultiplier.
+	//	PRINT 1 AT (1,26).
+	//} ELSE {
+	SET landingSpeed TO landingBurnData["speed"][landingParam]. PRINT 2 AT (1,26).
+	//}
+	PRINT "Landing speed:   " + landingSpeed + "     " AT (3,26).
 
-	until runmode = 0 {
-	// ---=== [**START**] [ UPDATING VARIABLES BEFORE EVERY ITERATION ] [**START**] ===--- //
-		
-		set mT to time:seconds.
-		set dT to mT - pT.
-		set altCur to body:altitudeof(Merlin1D_0:position) - 3.9981.
-		
-		if merlinData[0] = false {
-			if tval = 1 and Merlin1D_0:ignition = true and Merlin1D_0:flameout = false {
-				set merlinData to list( true, Merlin1D_0:maxthrustat(1), Merlin1D_0:maxthrustat(0), Merlin1D_0:slisp, Merlin1D_0:visp).
-			}
-		}
-
-		set rotCur to list(pitch_for(ship), compass_for(ship), rollConvert()).
-		set posCur to ship:geoposition.
-		
-		set impT to timeToAltitude(lzAlt, altCur). // Time to altitude, needs to be changed in the atmosphere
-		
-		if tr:hasimpact {
-			set impPosFut to tr:impactpos.
-		}
-
-		set velImp to (impPosFut:altitudeposition(lzAlt) - impPosPrev:altitudeposition(lzAlt))/dT.
-		
-		set lzDistCur to lzPos:position - ship:geoposition:altitudeposition(lzAlt). // Vector from ship to LZ
-		set lzDistImp to lzPos:position - impPosFut:altitudeposition(lzAlt). // Vector from impact point to LZ
-		set boosterDeltaV to Fuel["Stage 1 DeltaV"]().
-		
-		set lzBoosterOffset to vxcl(lzDistCur - body:position, lzDistCur):normalized * lzOffsetDist. // Flattened and sized <lzDistCur>
-		set lzImpactOffset to vxcl(lzDistImp - body:position, lzDistImp):normalized * lzOffsetDist. // Flattened and sized <lzDistImp>
-		// Changing the offset logic [Will need testing]
-		set landingOffset to lzPos:position + lzBoosterOffset - impPosFut:altitudeposition(lzAlt). // Pos behind the LZ to aim at during descent
-		
-		if runmode = 9 {
-			set landBurnT to landingBurnTime(ship:velocity:surface:mag, landBurnEngs, landBurnThr).
-			if tval = 0 {
-				set landBurnH to landBurnHeight().
-			}
-			if landBurnEngs = 3 {
-				set landBurnS to landBurnSpeed() + 50.
-			} else {
-				set landBurnS to landBurnSpeed().
-			}
-			set landBurnS2 to ((1/max(0.01, altCur - lzAlt)^0.25 * ((altCur - lzAlt) * 1.5))* -1) -1. // Formula that makes the booster touch down gently at minimum thrust
-		}
-		
-		// [<<IDEA>>] - Might move all the runmodes to a separate file and just load it here
-		// Main logic
-		
-		if runmode = 1 // Wait until separation
-		{
-			set steer to up.
-			set tval to 1.
-			AG9 on.
-			wait 5.
-			stage.
-			wait 3.
-			stage.
-			set runmode to 2.
-		}
-		else if runmode = 2 // Stabilizing and reorienting for boostback burn [optional]
-		{
-			if boosterDeltaV < landingBurnDeltaV {
-				set tval to 0.
-				Engine["Stop"](list(
-					Merlin1D_0
-				)).
-				if verticalspeed < -50 {
-					ag5 on.
-					set runmode to 8.
+	IF subRunmode = 0 {	//	Control when engines are being started and shut down
+		IF TimeToAltitude(landingBurnData["altitude"][landingParam], currentAltitude) < vehicle["engines"]["spoolUpTime"] - 1 {
+			SET tval TO 1.
+			Engines("start", Engines("centerEngines")).
+			Engines("throttle", Engines("landingEngines"), landing["landingThrottle"]).
+			WHEN TimeToAltitude(landingBurnData["altitude"][landingParam], currentAltitude) < vehicle["engines"]["spoolUpTime"] - 1.5 THEN {
+				Engines("start", Engines("landingEngines")).
+				WHEN landingParam < 50 THEN {
+					Engines("stop", Engines("sideEngines")).
+					GEAR ON.
 				}
 			}
+			SET subRunmode TO 1.
 		}
-		else if runmode = 8
-		{
-			set steer to lookdirup(-ship:velocity:surface, ship:facing:topvector).
-			if altCur < 45000
-			{
-				set runmode to 9.
-				when timeToAltitude(landBurnH + lzAlt, altCur) < 3 and altCur - lzAlt < 6000 then {
-					set tval to 1.
-					if landBurnEngs = 1 {
-						Engine["Start"](list(
-							Merlin1D_0
-						)).
-					} else {
-						Engine["Start"](list(
-							Merlin1D_0,
-							Merlin1D_1,
-							Merlin1D_2
-						)).
-					}
-				}
-			}
+	} ELSE IF subRunmode = 1 {	//	Control the throttle of center engine and shut it down once landed
+		SET VelThr_PID:SETPOINT TO -landingSpeed.
+		SET engineThrottle[2] TO engineThrottle[1]. SET engineThrottle[1] TO engineThrottle[0].
+		SET engineThrottle[0] TO VelThr_PID:UPDATE(mT, -SHIP:VELOCITY:SURFACE:MAG)/COS(VANG(UP:VECTOR, SHIP:FACING:FOREVECTOR)).
+		SET engineThrottleAvg TO (engineThrottle[0] + engineThrottle[1] + engineThrottle[2])/3.
+		//	Debug line below...
+		PRINT "Engine throttle: " + round(engineThrottleAvg, 3) + "          " AT (3,24).
+		Engines("throttle", Engines("centerEngines"), engineThrottleAvg).
+
+		IF landingParam = 0 OR VERTICALSPEED >= 0 {
+			Engines("stop", Engines("landingEngines")).
+			SET tval TO 0.
+			SET steer TO LOOKDIRUP(-BODY:POSITION, SHIP:FACING:TOPVECTOR).
+			SET runmode TO 3.
+			SET subRunmode TO 0.
 		}
-		else if runmode = 9
-		{
-			if landBurnEngs = 1 {
-				if landBurnS < landBurnS2 {
-					set event to true.
-				}
-			} else {
-				set event to true.
-			}
-			if ship:velocity:surface:mag < 75 and event = true {
-				set VelThr_PID:setpoint to landBurnS2.
-				Engine["Stop"](list(
-					Merlin1D_1,
-					Merlin1D_2
-				)).
-			} else {
-				set VelThr_PID:setpoint to landBurnS.
-			}
-			
-			set engThrust to (VelThr_PID:update(mT, verticalspeed)*100)/cos(vang(up:vector, ship:facing:forevector)).
-			Engine["Throttle"](
-			list(
-				list(Merlin1D_0, engThrust),
-				list(Merlin1D_1, landBurnThr),
-				list(Merlin1D_2, landBurnThr)
-			)).
-			
-			// This will need to be revised
-			set AeroSteeringVel_PID:kp to max(5, min(60, 60-((altCur/1000)*4))).
-
-			if shipCurrentTWR() < 1.6 and ship:velocity:surface:mag > 120 {
-
-				set lzOffsetDist to max(0, min(500, lzDistImp:mag/2)).
-
-				set AeroSteeringVel_PID:setpoint to 0.
-				set AeroSteering_PID:setpoint to AeroSteeringVel_PID:update(mT, landingOffset:mag).
-				set steerAngle to AeroSteering_PID:update(mT, velImp:mag). // This velocity may not be very useful (can be different direction) but will test it to check
-
-			} else {
-				
-				set lzOffsetDist to max(0, min(50, lzDistImp:mag/2)).
-				
-				set PoweredSteeringVel_PID:setpoint to 0.
-				set PoweredSteering_PID:setpoint to PoweredSteeringVel_PID:update(mT, landingOffset:mag).
-				set steerAngle to PoweredSteering_PID:update(mT, velImp:mag).
-				
-			}
-
-			if altCur < lzAlt + 20 or verticalspeed > 0 {
-				set steer to up.
-			} else {
-				// May need to tweak this in the future
-				if shipCurrentTWR() < 1.6 and ship:velocity:surface:mag > 120 { // If TWR over 1.6 or speed below 120m/s then engines have more steering power than aerodynamics
-					set lzImpactOffset to -lzImpactOffset. // If aerodynamics have more steering power, reverse the steering
-				}
-				set steer to lookdirup(-ship:velocity:surface, ship:facing:topvector) * angleaxis(steerAngle, lzImpactOffset). // Not sure if this will work correctly, needs testing
-			}
-			
-			if verticalspeed >= 0 {
-				set runmode to 0.
-				Engine["Stop"](list(
-					Merlin1D_0,
-					Merlin1D_1,
-					Merlin1D_2
-				)).
-				set tval to 0.
-				set steer to up.
-			}
-		}
-		
-		// stuff that needs to update after every iteration
-		if clearRequired {
-			clearscreen.
-			set clearRequired to false.
-		}
-		
-		if runmode >= 8 {
-			
-			set vec1 to vecdraw(ship:position, impPosFut:position, rgb(1,0,0), "Imp", 1, true).
-			set vec2 to vecdraw(ship:position, posCur:position, rgb(0,1,0), "Pos", 1, true).
-			set vec3 to vecdraw(ship:position, lzPos:position + landingOffset, rgb(1,1,1), "LO2", 1, true).
-		}
-
-		//Title bar
-		print "------------------- Flight Display 1.0 --------------------"						at (1, 1).
-		print "Launch Time:             T" + round(mT - lT) + "               "					at (3, 2).
-
-		print "Runmode:                   " + runmode + "     "									at (3, 4).
-		print "DeltaV remaining:          " + round(boosterDeltaV) + "     "					at (3, 5).
-		
-		print "Impact Time:               " + round(impT, 2) + "     "							at (3, 10).
-		print "Impact Distance:           " + round(lzDistImp:mag, 2) + "          " 			at (3, 11).
-		
-		print "Landing offset:            " + round(landingOffset:mag, 2) + "           " 		at (3, 13).
-		print "LZ offset distance:        " + round(lzOffsetDist, 2) + "           " 			at (3, 14).
-		print "Distance to LZ:            " + round(lzDistCur:mag, 2) + "           " 			at (3, 15).
-		
-		print "Steering Angle:            " + round(steerAngle, 1) + "     "					at (3, 17).
-		
-		print "Impact Velocity            " + round(velImp:mag, 1) + "         "				at (3, 19).
-
-		print "Landing DeltaV:            " + round(landingBurnDeltaV, 1) + "        "			at (3, 21).
-		
-		if runmode = 9 {
-		print "Time:                    " + round(landBurnT, 5) + "     "					at (3, 30).
-			
-		print "Height:                   " + round(landBurnH, 5) + "     "					at (3, 32).
-			
-		print "landBurnS:                " + round(landBurnS, 2) + "     "					at (3, 34).
-		print "landBurnS2:               " + round(landBurnS2, 2) + "     "					at (3, 35).
-		}
-		
-		// ---=== [**START**] [ UPDATING VARIABLES AFTER EVERY ITERATION ] [**START**] ===--- //
-		
-		set pT to mT.
-		set impPosPrev to impPosFut.
-
-		// ---=== [**END**] [ UPDATING VARIABLES AFTER EVERY ITERATION ] [**END**] ===--- //
-		
-		wait 0.
 	}
-	set vec1:show to false.
-	set vec2:show to false.
-	set vec3:show to false.
+
+	//	Displaying some useful vectors
+	SET vec1 TO VECDRAW(SHIP:POSITION, impactPosition:POSITION, RGB(1,0,0), "Impact", 1, TRUE).
+	SET vec2 TO VECDRAW(SHIP:POSITION, currentPosition:POSITION, RGB(0,1,0), "Position", 1, TRUE).
+	SET vec3 TO VECDRAW(SHIP:POSITION, lzPosition:POSITION + landingOffset, RGB(1,1,1), "Targetting", 1, TRUE).
+	SET vec4 TO VECDRAW(SHIP:POSITION, steer:FOREVECTOR * 75, RGB(1,0.55,0), "Steering", 1, TRUE).
 }
 
-unlock all.
+//	Waiting 1 physics tick so that everything updates
+WAIT 0.
+
+LOCAL finished IS FALSE.
+
+//	Program loop
+UNTIL finished {
+	SET finished TO Main().
+	WAIT 0.
 }
+
+//	Hide all vectors at the end
+SET vec1:SHOW TO FALSE.
+SET vec2:SHOW TO FALSE.
+SET vec3:SHOW TO FALSE.
+SET vec4:SHOW TO FALSE.
+
+//	Once done, release control of everything
+UNLOCK ALL.
