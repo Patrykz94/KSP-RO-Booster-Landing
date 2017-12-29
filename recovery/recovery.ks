@@ -354,8 +354,10 @@ FUNCTION Reentry {
 			SET eventTime TO mT + 600.	//	Just moving it far away...
 			IF landing["boostback"] { SET lzOffsetDistance TO 200. } ELSE { SET lzOffsetDistance TO 1000. }
 			SET reentryBurnDeltaV TO boosterDeltaV - landingBurnData["dvSpent"].
-			//	Purpusefully setting the maneuver deltaV to 500 extra to avoid massive attitude over correcting at the end
-			GLOBAL reentryNode IS NodeFromVector(-temporaryValues["reentryVelocity"]:NORMALIZED * (reentryBurnDeltaV + 500), temporaryValues["reentryTime"]).
+			//	Setting the initial maneuver node
+			LOCAL nodeData IS NodeFromVector(-temporaryValues["reentryVelocity"]:NORMALIZED * reentryBurnDeltaV, temporaryValues["reentryTime"]).
+			GLOBAL reentryNode IS NODE(temporaryValues["reentryTime"], 0, 0, reentryBurnDeltaV).
+			SET reentryNode:RADIALOUT TO nodeData[0]. SET reentryNode:NORMAL TO nodeData[1]. SET reentryNode:PROGRADE TO nodeData[2].
 			ADD(reentryNode).
 			SET eventTime TO mT + reentryNode:ETA.
 			SET subRunmode TO 3.
@@ -365,6 +367,10 @@ FUNCTION Reentry {
 		}
 	} ELSE IF subRunmode = 3 {
 		IF reentryNode:ETA < 5 {	//	When approaching the reentry burn, point in the right direction
+			IF NOT temporaryValues:HASKEY("ReentryFound") {
+				GetReentry(TRUE).
+				temporaryValues:ADD("ReentryFound", TRUE).
+			}
 			SET steer TO LOOKDIRUP(reentryNode:DELTAV, SHIP:FACING:TOPVECTOR).
 			IF reentryNode:ETA < 2 {	//	Start the center engine first and 2 seconds later the side engines
 				IF engineStartup OR mT > eventTime {
@@ -387,6 +393,7 @@ FUNCTION Reentry {
 						temporaryValues:REMOVE("reentryTime").
 						temporaryValues:REMOVE("reentryVelocity").
 						temporaryValues:REMOVE("angleToReentry").
+						temporaryValues:REMOVE("ReentryFound").
 						REMOVE(reentryNode).
 						CreateUI().
 						SET runmode TO 4.
@@ -396,6 +403,7 @@ FUNCTION Reentry {
 				}
 			}
 		} ELSE {
+			IF reentryNode:ETA < 15 { GetReentry(). }
 			SET steer TO LOOKDIRUP(-SHIP:VELOCITY:SURFACE, SHIP:FACING:TOPVECTOR).
 			IF VANG(-SHIP:VELOCITY:SURFACE, SHIP:FACING:FOREVECTOR) < 1 { RCS OFF. } ELSE { RCS ON. }
 		}

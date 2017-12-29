@@ -375,7 +375,68 @@ FUNCTION NodeFromVector {
 	LOCAL s_nrm IS VCRS(s_pro,s_pos).
 	LOCAL s_rad IS VCRS(s_nrm,s_pro).
 
-	RETURN NODE(n_time, VDOT(vec,s_rad:NORMALIZED), VDOT(vec,s_nrm:NORMALIZED), VDOT(vec,s_pro:NORMALIZED)).
+	RETURN LIST(VDOT(vec,s_rad:NORMALIZED), VDOT(vec,s_nrm:NORMALIZED), VDOT(vec,s_pro:NORMALIZED)).
+}
+
+//	Determines the best burn vector for reentry
+FUNCTION GetReentry {
+	PARAMETER final IS FALSE.
+	//	RBS is short for Reentry Burn Stats
+	IF NOT (DEFINED RBS) {
+		GLOBAL RBS IS LEXICON(
+			"anglePro", 0,
+			"progradeInc", 0.5,
+			"angleNor", 0,
+			"normalInc", 0.5,
+			"counter", 0,
+			"counterLength", 20,
+			"distance", landingOffset:MAG
+		).
+	}
+	IF landingOffset:MAG < 500 {
+		//	If landing distance just came below 500m, increase precission by making increments smaller
+		IF ABS(RBS["progradeInc"]) = 0.5 {
+			SET RBS["progradeInc"] TO RBS["progradeInc"]/5.
+			SET RBS["normalInc"] TO RBS["normalInc"]/5.
+		}
+		SET RBS["counterLength"] TO 10.
+	} ELSE {
+		//	If landing distance just increased beyond 500m, decrease precission by making increments larger but not as large as at the start
+		IF ABS(RBS["progradeInc"]) = 0.1 {
+			SET RBS["progradeInc"] TO RBS["progradeInc"]*5.
+			SET RBS["normalInc"] TO RBS["normalInc"]*5.
+		}
+		SET RBS["counterLength"] TO 20.
+	}
+	//	Increment the angles depending distance
+	IF RBS["counter"] < RBS["counterLength"]/2 {
+		IF landingOffset:MAG > RBS["distance"] {
+			SET RBS["progradeInc"] TO -RBS["progradeInc"].
+		}
+		SET RBS["anglePro"] TO MIN(15, MAX(-15, RBS["anglePro"] + RBS["progradeInc"])).
+	} ELSE {
+		IF landingOffset:MAG > RBS["distance"] {
+			SET RBS["normalInc"] TO -RBS["normalInc"].
+		}
+		SET RBS["angleNor"] TO MIN(15, MAX(-15, RBS["angleNor"] + RBS["normalInc"])).
+	}
+
+	//	Increment or reset the counter
+	IF RBS["counter"] >= RBS["counterLength"] - 1 { SET RBS["counter"] TO 0. } ELSE { SET RBS["counter"] TO RBS["counter"] + 1. }
+
+	//	Set up some vectors
+	LOCAL pro IS VELOCITYAT(SHIP, mT + reentryNode:ETA-0.1):SURFACE.
+	LOCAL pos IS POSITIONAT(SHIP, mT + reentryNode:ETA-0.1).
+	//	Calculate the burn vector, up/down movement first and sideways after that
+	LOCAL burnVector IS Rodrigues(-pro, GetNormalVec(pro, pos - BODY:POSITION), RBS["anglePro"]).
+	LOCAL extraDv IS 0.
+	IF final { SET extraDv TO 500. }
+	SET burnVector TO Rodrigues(burnVector, pos - BODY:POSITION, RBS["angleNor"]):NORMALIZED *  (reentryBurnDeltaV + extraDv).
+	//	Create a node out of new burn vector
+	LOCAL nodeData IS NodeFromVector(burnVector, mT + reentryNode:ETA-0.1).
+	SET reentryNode:RADIALOUT TO nodeData[0].
+	SET reentryNode:NORMAL TO nodeData[1].
+	SET reentryNode:PROGRADE TO nodeData[2].
 }
 
 //	Function for sending messages and saving a response
