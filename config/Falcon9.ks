@@ -22,7 +22,7 @@ GLOBAL vehicle IS LIST(
 GLOBAL sequence IS LIST(
 					LEXICON("time", -3, "type", "stage", "message", "Merlin 1D ignition"),
 					LEXICON("time", 0, "type", "stage", "message", "LIFTOFF"),
-					LEXICON("time", 180, "type", "stage", "message", "Fairing separation")
+					LEXICON("time", 202, "type", "jettison", "message", "Fairing separation", "massLost", 1752)
 ).
 GLOBAL controls IS LEXICON(
 					"launchTimeAdvance", 120,
