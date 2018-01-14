@@ -586,7 +586,7 @@ FUNCTION RefreshUI {
 	PrintValue(VERTICALSPEED, 7, 38, 48, "R").
 	PrintValue(GROUNDSPEED, 8, 40, 48, "R").
 	PrintValue(boosterDeltaV, 9, 36, 48, "R").
-	PrintValue(impactVelocityAvg:MAG, 10, 41, 48, "R").
+	PrintValue(impactVelocity:MAG, 10, 41, 48, "R").
 	PrintValue(DragForce(), 11, 40, 48, "R", 1).
 
 	IF UILex["message"]:LENGTH <> UILexLength {
