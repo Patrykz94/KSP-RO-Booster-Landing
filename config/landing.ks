@@ -9,7 +9,7 @@ LOCAL listOfLocations IS LEXICON(
 
 GLOBAL landing IS LEXICON(
 	"required", TRUE,
-	"landingEngines", 1,	//	Can be 1 or 3 for Falcon 9
+	"landingEngines", 3,	//	Can be 1 or 3 for Falcon 9
 	"landingThrottle", 0.6,
 	"location", listOfLocations["LZ-1"],
 	"launchLocation", listOfLocations["KSCLaunchPad"],
@@ -24,7 +24,7 @@ GLOBAL landing IS LEXICON(
 	"sideEngines", 2
 ).
 
-GLOBAL vessels IS LEXICON(
+LOCAL vessels IS LEXICON(
 	"Falcon 9 FT", LEXICON(
 		"pegas_cpu", "Falcon9S2",
 		"aerodynamics", LEXICON(

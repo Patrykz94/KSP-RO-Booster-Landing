@@ -29,24 +29,24 @@ RUNPATH("1:/aero_functions.ks").
 RUNPATH("1:/lib_navball.ks").
 
 //	Declare variables
-LOCAL runmode IS 0.		//	Pre-launch
+GLOBAL runmode IS 0.		//	Pre-launch
 LOCAL subRunmode IS 0.
 LOCAL currentPosition IS SHIP:GEOPOSITION.
-LOCAL currentAltitude IS 0.
+GLOBAL currentAltitude IS 0.
 LOCAL impactPosition IS SHIP:GEOPOSITION.
-LOCAL impactVelocity IS V(0,0,0).	//	Velocity of impact point, not booster velocity at impact
-LOCAL lzImpactDistance IS V(0,0,0).
-LOCAL lzCurrentDistance IS V(0,0,0).
-LOCAL launchSiteDistance IS V(0,0,0).
+GLOBAL impactVelocity IS V(0,0,0).	//	Velocity of impact point, not booster velocity at impact
+GLOBAL lzImpactDistance IS V(0,0,0).
+GLOBAL lzCurrentDistance IS V(0,0,0).
+GLOBAL launchSiteDistance IS V(0,0,0).
 LOCAL lzPosition IS SHIP:GEOPOSITION.
-LOCAL lzAltitude IS 0.
-LOCAL boosterDeltaV IS 0.
+GLOBAL lzAltitude IS 0.
+GLOBAL boosterDeltaV IS 0.
 LOCAL TR IS ADDONS:TR.
 //	Offsets
 LOCAL lzOffsetDistance IS 3000.
 LOCAL lzBoosterOffset IS V(0,0,0).
 LOCAL lzImpactOffset IS V(0,0,0).
-LOCAL landingOffset IS V(0,0,0).
+GLOBAL landingOffset IS V(0,0,0).
 //	Steering variables
 LOCAL tval IS 0.
 LOCAL throttleLimit IS 1.
@@ -54,29 +54,27 @@ LOCAL steer IS up.
 LOCAL steerAngle IS 0.
 LOCAL steerAngleMultiplier IS 1.
 //	Engine variables
-LOCAL engineReady IS FALSE.
 LOCAL engineStartup IS FALSE.
-LOCAL engineThrottle IS LIST(1,1,1).
-LOCAL engineThrottleAvg IS 1.
+LOCAL engineThrottle IS 1.
 LOCAL stable IS FALSE.
 //	Time tracking variables
 LOCAL dT IS 0.				//	Delta time
-LOCAL mT IS TIME:SECONDS.	//	Current time
-LOCAL lT IS 0.				//	Until/since launch
+GLOBAL mT IS TIME:SECONDS.	//	Current time
+GLOBAL lT IS 0.				//	Until/since launch
 LOCAL pT IS 0.				//	Previous tick time
 LOCAL eventTime IS 0.
 LOCAL event IS FALSE.
 //	Landing burn variables
-LOCAL impactTime IS 0.
+GLOBAL impactTime IS 0.
 LOCAL landingParam IS 0.
 LOCAL landingSpeed IS 0.
 //	Landing parameters
-LOCAL reentryBurnDeltaV IS 0.
+GLOBAL reentryBurnDeltaV IS 0.
 LOCAL flipDirection IS 0.
 LOCAL flipSpeed IS 24.
 LOCAL partCount IS 0. // Used to determine if upper stage has separated already
 //	Messaging variables
-LOCAL lastResponse IS LEXICON().
+GLOBAL lastResponse IS LEXICON().
 //	Vectors to be displayed
 LOCAL vec1 IS 0.
 LOCAL vec2 IS 0.
@@ -98,8 +96,8 @@ LOCAL AeroSteeringVel_PID IS PIDLOOP(0.2, 0, 0.1, -100, 100).
 LOCAL PoweredSteeringVel_PID IS PIDLOOP(0.1, 0, 0.05, -5, 5).
 
 //	Setting up UI
-LOCAL UILex IS LEXICON("time", LIST(), "message", LIST()).
-LOCAL UILexLength IS 0.
+GLOBAL UILex IS LEXICON("time", LIST(), "message", LIST()).
+GLOBAL UILexLength IS 0.
 CreateUI().
 
 //	Landing setup
@@ -197,7 +195,7 @@ FUNCTION Launch {
 
 			SET shutdownCondition TO { RETURN deltaVatSep > boosterDeltaV - 30. }.
 			SET throttleCondition TO { RETURN deltaVatSep > boosterDeltaV - 15. }.
-			IF throttleCondition() { SET engineThrottle[0] TO MIN(1, MAX(0, (boosterDeltaV-deltaVatSep)/15)). }
+			IF throttleCondition() { SET engineThrottle TO MIN(1, MAX(0, (boosterDeltaV-deltaVatSep)/15)). }
 			SET separationCondition TO { RETURN deltaVatSep > boosterDeltaV. }.
 
 		} ELSE {
@@ -217,7 +215,7 @@ FUNCTION Launch {
 		
 		IF throttleCondition() {
 			//	Progressively decrease throttle
-			Engines("throttle", Engines("centerEngines"), MIN(throttleLimit, engineThrottle[0])).
+			Engines("throttle", Engines("centerEngines"), MIN(throttleLimit, engineThrottle)).
 			SET temporaryValues["separationPhase"] TO 3.
 		} ELSE {
 			Engines("throttle", Engines("allEngines"), throttleLimit).
@@ -306,7 +304,7 @@ FUNCTION Boostback {
 		IF landingOffset:MAG > lzOffsetDistance * 3 { // If far from target position point in its direction
 			SET steer TO LOOKDIRUP(landingOffset, BODY:POSITION).
 		} ELSE {
-			IF landingOffset:MAG > temporaryValues["landingOffset"] { // If went past the target position
+			IF landingOffset:MAG > temporaryValues["landingOffset"] AND landingOffset:MAG < 1000 { // If went past the target position
 				Engines("stop", Engines("boostbackEngines")).
 				SET tval TO 0.
 				UNLOCK STEERING.
@@ -430,17 +428,20 @@ FUNCTION Recovery {
 	SET lzOffsetDistance TO MIN(500, lzCurrentDistance:MAG/5).
 	SET steerAngleMultiplier TO MAX(0.5, MIN(20, ((currentAltitude-lzAltitude)/-VERTICALSPEED)/2)).
 	//	Change the way of steering depending on wheter engines are running or not
-	IF ShipCurrentTWR() < 2 AND SHIP:VELOCITY:SURFACE:MAG > 120 {
-		SET AeroSteeringVel_PID:SETPOINT TO 0.
-		SET steerAngle TO MAX(-10, MIN(10, AeroSteeringVel_PID:UPDATE(mT, (landingOffset + lzImpactDistance):MAG)/steerAngleMultiplier)).
-	} ELSE {
+	IF (ShipCurrentTWR() > 6 AND SHIP:VELOCITY:SURFACE:MAG < 300) OR
+	(ShipCurrentTWR() > 4 AND SHIP:VELOCITY:SURFACE:MAG < 200) OR
+	(ShipCurrentTWR() > 2 AND SHIP:VELOCITY:SURFACE:MAG < 150) OR
+	(ShipCurrentTWR() > 1.5 AND SHIP:VELOCITY:SURFACE:MAG < 100) OR
+	(ShipCurrentTWR() > 1.2 AND SHIP:VELOCITY:SURFACE:MAG < 50) {
 		SET PoweredSteeringVel_PID:SETPOINT TO 0.
-		SET steerAngle TO MAX(-5, MIN(5, PoweredSteeringVel_PID:UPDATE(mT, (landingOffset + lzImpactDistance):MAG)/steerAngleMultiplier)).
+		SET steerAngle TO -MAX(-7, MIN(7, PoweredSteeringVel_PID:UPDATE(mT, (landingOffset + lzImpactDistance):MAG)/steerAngleMultiplier)).
+	} ELSE {
+		SET AeroSteeringVel_PID:SETPOINT TO 0.
+		SET steerAngle TO MAX(-12, MIN(12, AeroSteeringVel_PID:UPDATE(mT, (landingOffset + lzImpactDistance):MAG)/steerAngleMultiplier)).
 	}
-	IF currentAltitude < lzAltitude + 20 OR VERTICALSPEED > 0 {
+	IF currentAltitude < lzAltitude + 30 OR VERTICALSPEED > 0 {
 		SET steer TO LOOKDIRUP(-BODY:POSITION, SHIP:FACING:TOPVECTOR).
 	} ELSE {
-		IF ShipCurrentTWR() > 2 AND SHIP:VELOCITY:SURFACE:MAG < 120 { SET steerAngle TO -steerAngle. }
 		SET steer TO LOOKDIRUP(RODRIGUES(-SHIP:VELOCITY:SURFACE, GetNormalVec(landingOffset, impactPosition:POSITION + landingOffset), steerAngle), SHIP:FACING:TOPVECTOR).
 	}
 
@@ -450,24 +451,25 @@ FUNCTION Recovery {
 				SET landingParam TO landingParam -1.
 			} ELSE { BREAK. }
 		}
-		SET landingParam TO landingParam -1.
 	}
-	//IF landingParam < landingBurnData["altitude"]:LENGTH-1 {
-	//	//	May not even need the code below, need to test and see if any significant precision is gained
-	//	LOCAL speedMultiplier IS (currentAltitude - landingBurnData["altitude"][landingParam])/(landingBurnData["altitude"][landingParam+1] - landingBurnData["altitude"][landingParam]).
-	//	SET landingSpeed TO landingBurnData["speed"][landingParam] + (landingBurnData["speed"][landingParam+1] - landingBurnData["speed"][landingParam]) * speedMultiplier.
-	//} ELSE {
-	SET landingSpeed TO landingBurnData["speed"][landingParam].
-	//}
+
+	IF landingParam < landingBurnData["altitude"]:LENGTH-1 {
+		LOCAL speedMultiplier IS (currentAltitude - landingBurnData["altitude"][landingParam])/(landingBurnData["altitude"][landingParam+1] - landingBurnData["altitude"][landingParam]).
+		SET landingSpeed TO -(landingBurnData["speed"][landingParam] + (landingBurnData["speed"][landingParam+1] - landingBurnData["speed"][landingParam]) * speedMultiplier).
+	} ELSE {
+		SET landingSpeed TO -landingBurnData["speed"][landingParam].
+	}
 
 	IF subRunmode = 0 {	//	Control when engines are being started and shut down
-		IF TimeToAltitude(landingBurnData["altitude"][landingParam], currentAltitude) < vehicle["engines"]["spoolUpTime"] - 2 {
+		IF TimeToAltitude(landingBurnData["altitude"][landingParam], currentAltitude) < vehicle["engines"]["spoolUpTime"] - 1 {
 			SET tval TO 1.
 			Engines("start", Engines("centerEngines")).
 			Engines("throttle", Engines("landingEngines"), landing["landingThrottle"]).
-			WHEN TimeToAltitude(landingBurnData["altitude"][landingParam], currentAltitude) < vehicle["engines"]["spoolUpTime"] - 2.5 THEN {
+			WHEN TimeToAltitude(landingBurnData["altitude"][landingParam], currentAltitude) < vehicle["engines"]["spoolUpTime"] - 1 THEN {
+				AddUIMessage("Landing burn startup.").
 				Engines("start", Engines("landingEngines")).
-				WHEN landingParam < 35 THEN {
+				WHEN landingParam < 100 THEN {
+					IF landing["landingEngines"] > 1 { AddUIMessage("Shutting down side engines.").	}
 					Engines("stop", Engines("sideEngines")).
 					GEAR ON.
 				}
@@ -475,11 +477,9 @@ FUNCTION Recovery {
 			SET subRunmode TO 1.
 		}
 	} ELSE IF subRunmode = 1 {	//	Control the throttle of center engine and shut it down once landed
-		SET VelThr_PID:SETPOINT TO -landingSpeed.
-		SET engineThrottle[2] TO engineThrottle[1]. SET engineThrottle[1] TO engineThrottle[0].
-		SET engineThrottle[0] TO VelThr_PID:UPDATE(mT, -SHIP:VELOCITY:SURFACE:MAG)/COS(VANG(UP:VECTOR, SHIP:FACING:FOREVECTOR)).
-		SET engineThrottleAvg TO (engineThrottle[0] + engineThrottle[1] + engineThrottle[2])/3.
-		Engines("throttle", Engines("centerEngines"), engineThrottleAvg).
+		SET VelThr_PID:SETPOINT TO landingSpeed.
+		SET engineThrottle TO VelThr_PID:UPDATE(mT, -SHIP:VELOCITY:SURFACE:MAG)/COS(VANG(UP:VECTOR, SHIP:FACING:FOREVECTOR)).
+		Engines("throttle", Engines("centerEngines"), engineThrottle).
 
 		IF landingParam = 0 OR VERTICALSPEED >= 0 {
 			Engines("stop", Engines("landingEngines")).
@@ -487,6 +487,8 @@ FUNCTION Recovery {
 			SET steer TO LOOKDIRUP(-BODY:POSITION, SHIP:FACING:TOPVECTOR).
 			SET runmode TO 5.
 			SET subRunmode TO 0.
+			AddUIMessage("Touchdown.").
+			RefreshUI().
 		}
 	}
 

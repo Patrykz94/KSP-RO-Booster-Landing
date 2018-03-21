@@ -1,6 +1,6 @@
 //	Recovery utilities
 
-LOCAL ullageRequired IS FALSE.
+GLOBAL ullageRequired IS FALSE.
 
 //	Variables for controling rcs system during flips
 LOCAL rollAngSpeed IS 600/360.
@@ -11,7 +11,7 @@ LOCAL Pitch_PID IS PIDLOOP(0.2, 0, 0.2, -2, 2).	//	Changed limits from 0.8. Need
 
 //	landing burn variables
 LOCAL g0 IS 9.80665.
-LOCAL landingBurnData IS LEXICON("speed", LIST(0), "altitude", LIST(0), "mass", LIST(0), "dryMass", 0, "dvSpent", 0).
+GLOBAL landingBurnData IS LEXICON("speed", LIST(0), "altitude", LIST(0), "mass", LIST(0), "dryMass", 0, "dvSpent", 0).
 
 {	//	Start, shutdown, throttle or get list of engines
 	FUNCTION start {
@@ -278,12 +278,12 @@ LOCAL landingBurnData IS LEXICON("speed", LIST(0), "altitude", LIST(0), "mass", 
 }
 
 {	//	Calculating the landing burn using a reverse-landing simulation
-	LOCAL IPS IS 10.	//	Iterations per second
+	LOCAL IPS IS 20.	//	Iterations per second
 	LOCAL last IS 0.
 	LOCAL press IS 0.
 	LOCAL engs IS vehicle["engines"].
 	LOCAL e IS SHIP:PARTSTAGGED(engs["list"][0])[0].
-	LOCAL touchDownTime IS IPS*3.	//	How many iterations should the touchdown take
+	LOCAL touchDownTime IS IPS*4.5.	//	How many iterations should the touchdown take
 	
 	FUNCTION setUp {
 		PARAMETER dryDeltaV.
